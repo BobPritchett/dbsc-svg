@@ -260,11 +260,35 @@ class DiskBSpline {
 
   /**
    * Convert the B-spline to SVG path elements
-   * @param {number} numSamples - Number of sample points
+   * @param {number} numSamples - Number of sample points (if not provided, will be calculated based on path length)
    * @param {Object} options - Additional options (unused currently)
    * @returns {Object} - SVG path data including fill path, skeleton path, disks, and normals
    */
-  toSVGPath(numSamples = 100, options = {}) {
+  toSVGPath(numSamples = null, options = {}) {
+    // Calculate total path length if numSamples is not provided
+    if (numSamples === null) {
+      let totalLength = 0;
+      for (let i = 0; i < this.controlDisks.length - 1; i++) {
+        const dx =
+          this.controlDisks[i + 1].center.x - this.controlDisks[i].center.x;
+        const dy =
+          this.controlDisks[i + 1].center.y - this.controlDisks[i].center.y;
+        totalLength += Math.sqrt(dx * dx + dy * dy);
+      }
+
+      // Use approximately 2 samples per pixel of path length, with a minimum of 50 samples
+      // and a maximum of 200 samples to ensure smooth curves while maintaining performance
+      numSamples = Math.min(200, Math.max(50, Math.round(totalLength * 2)));
+
+      if (this.debug) {
+        this.logMessage(
+          `Calculated ${numSamples} samples based on path length of ${Math.round(
+            totalLength
+          )} pixels`
+        );
+      }
+    }
+
     const disks = this.sampleCurve(numSamples);
 
     if (disks.length < 2) {
@@ -465,7 +489,7 @@ class DiskBSpline {
     // Then draw the control disks
     this.controlDisks.forEach((disk) => {
       // Disk outline
-      circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${disk.radius}" fill="none" stroke="${opts.lineColor}" stroke-dasharray="2,2" />`;
+      circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${disk.radius}" fill="none" stroke="${opts.lineColor}" stroke-dasharray="1,1" stroke-width="1" stroke-linecap="rounded" />`;
       // Center point
       circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${opts.dotSize}" fill="${opts.centerColor}" />`;
       // Radius label

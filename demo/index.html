@@ -94,6 +94,20 @@
         border-radius: 4px;
         border: 1px solid #ccc;
       }
+      .footer {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid #ccc;
+        font-size: 0.9em;
+        color: #666;
+      }
+      .footer a {
+        color: #0066cc;
+        text-decoration: none;
+      }
+      .footer a:hover {
+        text-decoration: underline;
+      }
     </style>
   </head>
   <body>
@@ -156,6 +170,15 @@
     <div id="debugSection">
       <h2>Debug Log</h2>
       <div id="log" class="log"></div>
+    </div>
+
+    <div class="footer">
+      Built by AI with prompting by
+      <a href="https://BobPritchett.com" target="_blank">Bob Pritchett</a>.
+      Check out my
+      <a href="https://bobpritchett.com/unicode-inspector" target="_blank"
+        >Unicode Inspector</a
+      >.
     </div>
 
     <!-- Import the DiskBSpline library -->
@@ -333,7 +356,7 @@
           });
 
           // Generate paths
-          const result = bspline.toSVGPath(100);
+          const result = bspline.toSVGPath();
 
           // Control disks with custom styling
           const controlCircles = showControlDisks
