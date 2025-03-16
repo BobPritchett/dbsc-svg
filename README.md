@@ -1,12 +1,12 @@
-# Disk B-Spline Test Harness
+# Disk B-Spline Curves
 
 This repository contains an interactive test harness for visualizing and experimenting with Disk B-Splines, a powerful technique for generating variable-width curves.
 
-![Disk B-Spline Example](https://api.placeholder.com/800/400)
+![Disk B-Spline Curves Demo](https://bobpritchett.github.io/dbsc-svg/demo)
 
 ## Overview
 
-Disk B-Splines are a mathematical tool for generating smooth variable-width curves from a sequence of control disks. Each control disk consists of a center point and a radius, and the interpolation between these disks creates paths with continuously varying width. The implementation is particularly useful for:
+Disk B-Spline Curves are a mathematical tool for generating smooth variable-width curves from a sequence of control disks. Each control disk consists of a center point and a radius, and the interpolation between these disks creates paths with continuously varying width. The implementation is particularly useful for:
 
 - Drawing calligraphic strokes
 - Creating natural-looking organic shapes
