@@ -44,6 +44,9 @@
       }
       .controls {
         margin-bottom: 10px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
       }
       h2 {
         margin-top: 0;
@@ -85,6 +88,12 @@
         -moz-user-select: none;
         -ms-user-select: none;
       }
+      select {
+        padding: 5px;
+        font-size: 14px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+      }
     </style>
   </head>
   <body>
@@ -118,10 +127,33 @@
     </div>
 
     <div class="container" id="examples-container">
-      <!-- Examples will be dynamically generated here -->
+      <div class="curve-container">
+        <div class="controls">
+          <select id="exampleSelect">
+            <option value="example1">Simple Variable Width Curve</option>
+            <option value="example2">Complex Variable Width Curve</option>
+            <option value="example3">Calligraphic Stroke</option>
+            <option value="example4">Calligraphic Effect</option>
+            <option value="example5">Interactive Curve</option>
+          </select>
+          <button id="addPointButton">Add Point</button>
+          <button id="resetButton">Reset</button>
+          <button id="clearButton">Clear</button>
+        </div>
+        <div class="example-content">
+          <div class="data-column">
+            <div class="instructions">
+              Edit points below. Each line should be in the format x,y,radius
+            </div>
+            <textarea id="pointsData"></textarea>
+            <div id="errorMessage" class="error-message"></div>
+          </div>
+          <div class="visual-column" id="visualArea"></div>
+        </div>
+      </div>
     </div>
 
-    <div>
+    <div id="debugSection">
       <h2>Debug Log</h2>
       <div id="log" class="log"></div>
     </div>
@@ -131,69 +163,70 @@
 
     <script>
       // Define examples data
-      const examplesData = [
-        {
-          id: "example1",
-          title: "Example 1: Simple Variable Width Curve",
+      const examplesData = {
+        example1: {
+          title: "Simple Variable Width Curve",
           fillColor: "black",
           data: "50,150,10\n150,50,25\n250,150,15\n350,100,5",
         },
-        {
-          id: "example2",
-          title: "Example 2: Complex Variable Width Curve",
+        example2: {
+          title: "Complex Variable Width Curve",
           fillColor: "black",
           data: "5,180,1\n70,170,4\n80,140,6\n20,120,10\n40,60,12\n150,20,20\n260,60,12\n260,120,10\n220,140,6\n230,170,4\n295,180,1",
         },
-        {
-          id: "example3",
-          title: "Example 3: Calligraphic Stroke",
+        example3: {
+          title: "Calligraphic Stroke",
           fillColor: "black",
-          data: "50,100,3\n100,120,10\n150,80,15\n200,150,20\n250,50,15\n300,120,10\n350,100,3",
+          data: `162,177,1
+90,78,6
+156,43,4
+162,116,0
+180,50,4
+238,92,6
+164,190,01`,
         },
-        {
-          id: "example4",
-          title: "Example 4: Calligraphic Effect",
+        example4: {
+          title: "Calligraphic Effect",
           fillColor: "black",
           data: "50,100,3\n100,80,8\n150,50,20\n200,80,30\n250,150,15\n300,120,7\n350,100,3",
         },
-        {
-          id: "example5",
-          title: "Example 5: Interactive Curve",
+        example5: {
+          title: "Interactive Curve",
           fillColor: "black",
           data: "50,100,10\n150,50,15\n250,50,20\n350,100,10",
         },
-      ];
+      };
 
       // Define visual styling options
       const visualOptions = {
         curve: {
-          normalColor: "black", // Default curve color when no diagnostics shown
-          diagnosticColor: "black", // Curve color when diagnostics are shown
-          diagnosticOpacity: 0.3, // Opacity when diagnostics are shown
+          normalColor: "black",
+          diagnosticColor: "black",
+          diagnosticOpacity: 0.3,
         },
         skeleton: {
-          color: "#0066cc", // Skeleton path color
-          width: 2, // Skeleton path width
+          color: "#0066cc",
+          width: 2,
         },
         normals: {
-          positiveColor: "blue", // Positive normal vector color
-          negativeColor: "red", // Negative normal vector color
-          width: 1.5, // Normal vector line width
+          positiveColor: "blue",
+          negativeColor: "red",
+          width: 1.5,
         },
         controlDisks: {
-          lineColor: "#666", // Control disk outline color
-          centerColor: "#cc3300", // Control point center color
-          textColor: "#333", // Text label color
-          lineWidth: 1, // Line width for outlines
-          dotSize: 3, // Size of center point
+          lineColor: "#666",
+          centerColor: "#cc3300",
+          textColor: "#333",
+          lineWidth: 1,
+          dotSize: 3,
         },
       };
 
       // Helper function to create SVG content
       function createSVG(width, height, content) {
         return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-        ${content}
-      </svg>`;
+          ${content}
+        </svg>`;
       }
 
       // Parse text data into control disks
@@ -227,177 +260,6 @@
         return { controlDisks, hasError };
       }
 
-      // Function to create a curve container
-      function createCurveContainer(example) {
-        const container = document.createElement("div");
-        container.className = "curve-container";
-
-        const heading = document.createElement("h2");
-        heading.textContent = example.title;
-        container.appendChild(heading);
-
-        const contentDiv = document.createElement("div");
-        contentDiv.className = "example-content";
-
-        // Data column with textarea
-        const dataColumn = document.createElement("div");
-        dataColumn.className = "data-column";
-
-        // Only add control buttons for Example 5
-        if (example.id === "example5") {
-          const controlsDiv = document.createElement("div");
-          controlsDiv.className = "controls";
-          controlsDiv.style.marginBottom = "10px";
-
-          const addButton = document.createElement("button");
-          addButton.textContent = "Add Point";
-          addButton.addEventListener("click", () => {
-            // Add a random point
-            const x = Math.floor(Math.random() * 350) + 25;
-            const y = Math.floor(Math.random() * 150) + 25;
-            const radius = Math.floor(Math.random() * 15) + 5;
-            const textarea = document.getElementById(`${example.id}-data`);
-
-            // Only add newline if the textarea is not empty
-            const newPoint = `${textarea.value ? "\n" : ""}${x},${y},${radius}`;
-            textarea.value += newPoint;
-            updateCurve(example.id);
-          });
-
-          const resetButton = document.createElement("button");
-          resetButton.textContent = "Reset";
-          resetButton.addEventListener("click", () => {
-            const textarea = document.getElementById(`${example.id}-data`);
-            textarea.value = example.data;
-            updateCurve(example.id);
-          });
-
-          const clearButton = document.createElement("button");
-          clearButton.textContent = "Clear";
-          clearButton.addEventListener("click", () => {
-            const textarea = document.getElementById(`${example.id}-data`);
-            textarea.value = "";
-            updateCurve(example.id);
-          });
-
-          controlsDiv.appendChild(addButton);
-          controlsDiv.appendChild(document.createTextNode(" "));
-          controlsDiv.appendChild(resetButton);
-          controlsDiv.appendChild(document.createTextNode(" "));
-          controlsDiv.appendChild(clearButton);
-          dataColumn.appendChild(controlsDiv);
-        }
-
-        const instructions = document.createElement("div");
-        instructions.className = "instructions";
-        dataColumn.appendChild(instructions);
-
-        const textarea = document.createElement("textarea");
-        textarea.id = `${example.id}-data`;
-        textarea.value = example.data;
-        textarea.addEventListener("input", () => updateCurve(example.id));
-        dataColumn.appendChild(textarea);
-
-        const errorDiv = document.createElement("div");
-        errorDiv.id = `${example.id}-error`;
-        errorDiv.className = "error-message";
-        dataColumn.appendChild(errorDiv);
-
-        // Visual column for the curve
-        const visualColumn = document.createElement("div");
-        visualColumn.className = "visual-column";
-        visualColumn.id = example.id;
-
-        // For Example 5, add click event to add points
-        if (example.id === "example5") {
-          let isDragging = false;
-          let startX = 0;
-          let startY = 0;
-          let tempPoint = null;
-
-          const handleMouseDown = (event) => {
-            // Get the SVG element inside the visual column
-            const svg = visualColumn.querySelector("svg");
-            if (!svg) return;
-
-            // Prevent text selection during drag
-            visualColumn.classList.add("no-select");
-
-            const rect = svg.getBoundingClientRect();
-            // Calculate the scale factors between SVG viewport and actual display size
-            const scaleX = 400 / rect.width; // 400 is the SVG viewBox width
-            const scaleY = 200 / rect.height; // 200 is the SVG viewBox height
-
-            // Calculate the coordinates in the SVG's coordinate system
-            startX = Math.round((event.clientX - rect.left) * scaleX);
-            startY = Math.round((event.clientY - rect.top) * scaleY);
-
-            // Add the initial point with radius 1
-            const textarea = document.getElementById(`${example.id}-data`);
-            const newPoint = `${
-              textarea.value ? "\n" : ""
-            }${startX},${startY},1`;
-            textarea.value += newPoint;
-            updateCurve(example.id);
-
-            isDragging = true;
-          };
-
-          const handleMouseMove = (event) => {
-            if (!isDragging) return;
-
-            const svg = visualColumn.querySelector("svg");
-            if (!svg) return;
-
-            const rect = svg.getBoundingClientRect();
-            const scaleX = 400 / rect.width;
-            const scaleY = 200 / rect.height;
-
-            const currentX = Math.round((event.clientX - rect.left) * scaleX);
-            const currentY = Math.round((event.clientY - rect.top) * scaleY);
-
-            // Calculate radius based on scaled distance from start point
-            const dx = (currentX - startX) / scaleX;
-            const dy = (currentY - startY) / scaleY;
-            const radius = Math.max(
-              1,
-              Math.round(Math.sqrt(dx * dx + dy * dy))
-            );
-
-            // Update the last point's radius
-            const textarea = document.getElementById(`${example.id}-data`);
-            const lines = textarea.value.trim().split("\n");
-            lines[lines.length - 1] = `${startX},${startY},${radius}`;
-            textarea.value = lines.join("\n");
-            updateCurve(example.id);
-          };
-
-          const handleMouseUp = (event) => {
-            if (!isDragging) return;
-
-            // Remove no-select class
-            visualColumn.classList.remove("no-select");
-            isDragging = false;
-          };
-
-          visualColumn.addEventListener("mousedown", handleMouseDown);
-          visualColumn.addEventListener("mousemove", handleMouseMove);
-          visualColumn.addEventListener("mouseup", handleMouseUp);
-          visualColumn.addEventListener("mouseleave", () => {
-            // Remove no-select class if mouse leaves during drag
-            visualColumn.classList.remove("no-select");
-            isDragging = false;
-          });
-        }
-
-        contentDiv.appendChild(dataColumn);
-        contentDiv.appendChild(visualColumn);
-
-        container.appendChild(contentDiv);
-
-        return container;
-      }
-
       // Function to check if any diagnostics are enabled
       function areDiagnosticsEnabled() {
         return (
@@ -407,42 +269,15 @@
         );
       }
 
-      // Function to update a curve based on textarea data
-      function updateCurve(exampleId) {
-        const textarea = document.getElementById(`${exampleId}-data`);
-        const errorDiv = document.getElementById(`${exampleId}-error`);
-        const visualDiv = document.getElementById(exampleId);
-
-        // Get the example data
-        const example = examplesData.find((e) => e.id === exampleId);
-        if (!example) return;
+      // Function to update the curve
+      function updateCurve() {
+        const textarea = document.getElementById("pointsData");
+        const errorDiv = document.getElementById("errorMessage");
+        const visualDiv = document.getElementById("visualArea");
+        const currentExample = document.getElementById("exampleSelect").value;
 
         // Parse the control disks
         const { controlDisks, hasError } = parseControlDisks(textarea.value);
-
-        // Check if we have enough control disks for a cubic B-spline
-        if (controlDisks.length < 4) {
-          errorDiv.textContent =
-            controlDisks.length === 0
-              ? "Click anywhere in the area to add points"
-              : "Need at least 4 control points for a cubic B-spline";
-          // Create empty SVG with just the background
-          visualDiv.innerHTML = createSVG(400, 200, "");
-          return;
-        }
-
-        if (hasError) {
-          errorDiv.textContent =
-            "Some lines failed to parse. Format should be x,y,radius (one per line).";
-        } else {
-          errorDiv.textContent = "";
-        }
-
-        // Create B-spline
-        const bspline = new DiskBSpline(controlDisks, {
-          degree: 3,
-          debug: document.getElementById("showDebugToggle")?.checked || false,
-        });
 
         // Get toggle states
         const showSkeleton =
@@ -454,106 +289,264 @@
         ).checked;
         const showDiagnostics = areDiagnosticsEnabled();
 
-        // Generate paths
-        const result = bspline.toSVGPath(100);
+        // Create SVG content
+        let svgContent = "";
 
-        // Control disks with custom styling
-        const controlCircles = showControlDisks
-          ? bspline.controlDisksToSVG(visualOptions.controlDisks)
-          : "";
+        // If we have fewer than 4 points, show red dots for existing points
+        if (controlDisks.length < 4) {
+          errorDiv.textContent =
+            controlDisks.length === 0
+              ? "Click anywhere in the area to add points"
+              : "Need at least 4 control points for a cubic B-spline";
 
-        // Add normal vectors visualization if enabled
-        let normalLines = "";
+          // Add red dots for existing points
+          controlDisks.forEach((disk) => {
+            svgContent += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="3" fill="red" />`;
+          });
 
-        if (showNormals) {
-          for (
-            let i = 0;
-            i < result.disks.length;
-            i += Math.floor(result.disks.length / 15)
-          ) {
-            const disk = result.disks[i];
-            const normal = result.normals[i];
-
-            normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
-                               x2="${disk.center.x + normal.x * disk.radius}" 
-                               y2="${disk.center.y + normal.y * disk.radius}" 
-                               stroke="${visualOptions.normals.positiveColor}" 
-                               stroke-width="${
-                                 visualOptions.normals.width
-                               }" />`;
-
-            normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
-                               x2="${disk.center.x - normal.x * disk.radius}" 
-                               y2="${disk.center.y - normal.y * disk.radius}" 
-                               stroke="${visualOptions.normals.negativeColor}" 
-                               stroke-width="${
-                                 visualOptions.normals.width
-                               }" />`;
+          // If we're currently dragging, show the preview circle
+          if (window.isDragging) {
+            const radius = Math.max(
+              1,
+              Math.round(
+                Math.sqrt(
+                  Math.pow(window.currentX - window.startX, 2) +
+                    Math.pow(window.currentY - window.startY, 2)
+                )
+              )
+            );
+            svgContent += `<circle cx="${window.startX}" cy="${window.startY}" r="${radius}" 
+              fill="none" stroke="gray" stroke-width="1" stroke-dasharray="4,4" />`;
           }
+        } else {
+          if (hasError) {
+            errorDiv.textContent =
+              "Some lines failed to parse. Format should be x,y,radius (one per line).";
+          } else {
+            errorDiv.textContent = "";
+          }
+
+          // Create B-spline
+          const bspline = new DiskBSpline(controlDisks, {
+            degree: 3,
+            debug: document.getElementById("showDebugToggle")?.checked || false,
+          });
+
+          // Generate paths
+          const result = bspline.toSVGPath(100);
+
+          // Control disks with custom styling
+          const controlCircles = showControlDisks
+            ? bspline.controlDisksToSVG(visualOptions.controlDisks)
+            : "";
+
+          // Add normal vectors visualization if enabled
+          let normalLines = "";
+
+          if (showNormals) {
+            for (
+              let i = 0;
+              i < result.disks.length;
+              i += Math.floor(result.disks.length / 15)
+            ) {
+              const disk = result.disks[i];
+              const normal = result.normals[i];
+
+              normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
+                                 x2="${disk.center.x + normal.x * disk.radius}" 
+                                 y2="${disk.center.y + normal.y * disk.radius}" 
+                                 stroke="${
+                                   visualOptions.normals.positiveColor
+                                 }" 
+                                 stroke-width="${
+                                   visualOptions.normals.width
+                                 }" />`;
+
+              normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
+                                 x2="${disk.center.x - normal.x * disk.radius}" 
+                                 y2="${disk.center.y - normal.y * disk.radius}" 
+                                 stroke="${
+                                   visualOptions.normals.negativeColor
+                                 }" 
+                                 stroke-width="${
+                                   visualOptions.normals.width
+                                 }" />`;
+            }
+          }
+
+          // Create the skeleton path element if enabled
+          const skeletonPathElement = showSkeleton
+            ? `<path d="${result.skeletonPath}" 
+                fill="none" 
+                stroke="${visualOptions.skeleton.color}" 
+                stroke-width="${visualOptions.skeleton.width}" 
+                class="skeleton-path" />`
+            : "";
+
+          // Choose appropriate fill color and opacity based on diagnostics
+          const fillColor = showDiagnostics
+            ? visualOptions.curve.diagnosticColor
+            : visualOptions.curve.normalColor;
+          const opacity = showDiagnostics
+            ? visualOptions.curve.diagnosticOpacity
+            : 1;
+
+          svgContent = `
+            <path d="${result.fillPath}" fill="${fillColor}" opacity="${opacity}" stroke="none" />
+            ${skeletonPathElement}
+            ${controlCircles}
+            ${normalLines}
+          `;
         }
-
-        // Create the skeleton path element if enabled
-        const skeletonPathElement = showSkeleton
-          ? `<path d="${result.skeletonPath}" 
-              fill="none" 
-              stroke="${visualOptions.skeleton.color}" 
-              stroke-width="${visualOptions.skeleton.width}" 
-              class="skeleton-path" />`
-          : "";
-
-        // Choose appropriate fill color and opacity based on diagnostics
-        const fillColor = showDiagnostics
-          ? visualOptions.curve.diagnosticColor
-          : visualOptions.curve.normalColor;
-        const opacity = showDiagnostics
-          ? visualOptions.curve.diagnosticOpacity
-          : 1;
-
-        const svgContent = `
-        <path d="${result.fillPath}" fill="${fillColor}" opacity="${opacity}" stroke="none" />
-        ${skeletonPathElement}
-        ${controlCircles}
-        ${normalLines}
-      `;
 
         // Create SVG
         visualDiv.innerHTML = createSVG(400, 200, svgContent);
       }
 
-      // Initialize all examples
-      function initExamples() {
-        const container = document.getElementById("examples-container");
+      // Initialize the demo
+      function initDemo() {
+        const exampleSelect = document.getElementById("exampleSelect");
+        const textarea = document.getElementById("pointsData");
+        const addButton = document.getElementById("addPointButton");
+        const resetButton = document.getElementById("resetButton");
+        const clearButton = document.getElementById("clearButton");
+        const visualArea = document.getElementById("visualArea");
+        const debugToggle = document.getElementById("showDebugToggle");
+        const debugSection = document.getElementById("debugSection");
 
-        // Create all examples
-        examplesData.forEach((example) => {
-          container.appendChild(createCurveContainer(example));
-          updateCurve(example.id);
+        // Set initial example
+        textarea.value = examplesData[exampleSelect.value].data;
+        updateCurve();
+
+        // Handle example selection
+        exampleSelect.addEventListener("change", () => {
+          textarea.value = examplesData[exampleSelect.value].data;
+          updateCurve();
         });
+
+        // Handle textarea changes
+        textarea.addEventListener("input", updateCurve);
+
+        // Handle Add Point button
+        addButton.addEventListener("click", () => {
+          const x = Math.floor(Math.random() * 350) + 25;
+          const y = Math.floor(Math.random() * 150) + 25;
+          const radius = Math.floor(Math.random() * 15) + 5;
+          const newPoint = `${textarea.value ? "\n" : ""}${x},${y},${radius}`;
+          textarea.value += newPoint;
+          updateCurve();
+        });
+
+        // Handle Reset button
+        resetButton.addEventListener("click", () => {
+          textarea.value = examplesData[exampleSelect.value].data;
+          updateCurve();
+        });
+
+        // Handle Clear button
+        clearButton.addEventListener("click", () => {
+          textarea.value = "";
+          updateCurve();
+        });
+
+        // Handle debug toggle
+        debugToggle.addEventListener("change", () => {
+          debugSection.style.display = debugToggle.checked ? "block" : "none";
+          updateCurve();
+        });
+
+        // Set initial debug section visibility
+        debugSection.style.display = debugToggle.checked ? "block" : "none";
+
+        // Handle interactive point creation
+        window.isDragging = false;
+        window.startX = 0;
+        window.startY = 0;
+        window.currentX = 0;
+        window.currentY = 0;
+
+        const handleMouseDown = (event) => {
+          const svg = visualArea.querySelector("svg");
+          if (!svg) return;
+
+          visualArea.classList.add("no-select");
+
+          const rect = svg.getBoundingClientRect();
+          const scaleX = 400 / rect.width;
+          const scaleY = 200 / rect.height;
+
+          window.startX = Math.round((event.clientX - rect.left) * scaleX);
+          window.startY = Math.round((event.clientY - rect.top) * scaleY);
+          window.currentX = window.startX;
+          window.currentY = window.startY;
+
+          const newPoint = `${textarea.value ? "\n" : ""}${window.startX},${
+            window.startY
+          },1`;
+          textarea.value += newPoint;
+          updateCurve();
+
+          window.isDragging = true;
+        };
+
+        const handleMouseMove = (event) => {
+          if (!window.isDragging) return;
+
+          const svg = visualArea.querySelector("svg");
+          if (!svg) return;
+
+          const rect = svg.getBoundingClientRect();
+          const scaleX = 400 / rect.width;
+          const scaleY = 200 / rect.height;
+
+          window.currentX = Math.round((event.clientX - rect.left) * scaleX);
+          window.currentY = Math.round((event.clientY - rect.top) * scaleY);
+
+          const dx = (window.currentX - window.startX) / scaleX;
+          const dy = (window.currentY - window.startY) / scaleY;
+          const radius = Math.max(1, Math.round(Math.sqrt(dx * dx + dy * dy)));
+
+          const lines = textarea.value.trim().split("\n");
+          lines[
+            lines.length - 1
+          ] = `${window.startX},${window.startY},${radius}`;
+          textarea.value = lines.join("\n");
+          updateCurve();
+        };
+
+        const handleMouseUp = (event) => {
+          if (!window.isDragging) return;
+          visualArea.classList.remove("no-select");
+          window.isDragging = false;
+          updateCurve();
+        };
+
+        visualArea.addEventListener("mousedown", handleMouseDown);
+        visualArea.addEventListener("mousemove", handleMouseMove);
+        visualArea.addEventListener("mouseup", handleMouseUp);
+        visualArea.addEventListener("mouseleave", () => {
+          visualArea.classList.remove("no-select");
+          window.isDragging = false;
+          updateCurve();
+        });
+
+        // Add event listeners for the toggle options
+        document
+          .getElementById("showSkeletonToggle")
+          .addEventListener("change", updateCurve);
+        document
+          .getElementById("showNormalsToggle")
+          .addEventListener("change", updateCurve);
+        document
+          .getElementById("showControlDisksToggle")
+          .addEventListener("change", updateCurve);
+        document
+          .getElementById("showDebugToggle")
+          ?.addEventListener("change", updateCurve);
       }
 
-      // Function to redraw all examples
-      function redrawAllExamples() {
-        examplesData.forEach((example) => {
-          updateCurve(example.id);
-        });
-      }
-
-      // Initialize all examples
-      initExamples();
-
-      // Add event listeners for the toggle options
-      document
-        .getElementById("showSkeletonToggle")
-        .addEventListener("change", redrawAllExamples);
-      document
-        .getElementById("showNormalsToggle")
-        .addEventListener("change", redrawAllExamples);
-      document
-        .getElementById("showControlDisksToggle")
-        .addEventListener("change", redrawAllExamples);
-      document
-        .getElementById("showDebugToggle")
-        ?.addEventListener("change", redrawAllExamples);
+      // Initialize the demo
+      initDemo();
     </script>
   </body>
 </html>
