@@ -1,0 +1,13 @@
+{
+  "name": "dbsc-svg",
+  "version": "0.1.0",
+  "description": "Utility JavaScript class for generating SVG shapes",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BobPritchett/dbsc-svg.git"
+  },
+  "keywords": ["SVG", "utility", "spline", "curve", "shape"],
+  "author": "Bob Pritchett",
+  "license": "MIT"
+}
