@@ -1,5 +1,7 @@
 # Disk B-Spline Curves
 
+![Demo Screenshot](assets/example-screenshot.png)
+
 This repository contains an interactive test harness for visualizing and experimenting with Disk B-Splines, a powerful technique for generating variable-width curves.
 
 ![Disk B-Spline Curves Demo](https://bobpritchett.github.io/dbsc-svg/demo)

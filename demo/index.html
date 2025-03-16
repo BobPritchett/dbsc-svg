@@ -219,9 +219,42 @@
       const dataColumn = document.createElement('div');
       dataColumn.className = 'data-column';
       
+      // Only add control buttons for Example 5
+      if (example.id === "example5") {
+        const controlsDiv = document.createElement('div');
+        controlsDiv.className = 'controls';
+        controlsDiv.style.marginBottom = '10px';
+        
+        const addButton = document.createElement('button');
+        addButton.textContent = 'Add Point';
+        addButton.addEventListener('click', () => {
+          // Add a random point
+          const x = Math.floor(Math.random() * 350) + 25;
+          const y = Math.floor(Math.random() * 150) + 25;
+          const radius = Math.floor(Math.random() * 15) + 5;
+          const textarea = document.getElementById(`${example.id}-data`);
+          
+          // Add the new point to the textarea
+          textarea.value += `\n${x},${y},${radius}`;
+          updateCurve(example.id);
+        });
+        
+        const resetButton = document.createElement('button');
+        resetButton.textContent = 'Reset';
+        resetButton.addEventListener('click', () => {
+          const textarea = document.getElementById(`${example.id}-data`);
+          textarea.value = example.data;
+          updateCurve(example.id);
+        });
+        
+        controlsDiv.appendChild(addButton);
+        controlsDiv.appendChild(document.createTextNode(' '));
+        controlsDiv.appendChild(resetButton);
+        dataColumn.appendChild(controlsDiv);
+      }
+      
       const instructions = document.createElement('div');
       instructions.className = 'instructions';
-      instructions.textContent = 'Format: x,y,radius (one per line)';
       dataColumn.appendChild(instructions);
       
       const textarea = document.createElement('textarea');
@@ -239,6 +272,30 @@
       const visualColumn = document.createElement('div');
       visualColumn.className = 'visual-column';
       visualColumn.id = example.id;
+      
+      // For Example 5, add click event to add points
+      if (example.id === "example5") {
+        visualColumn.addEventListener('click', (event) => {
+          // Get the SVG element inside the visual column
+          const svg = visualColumn.querySelector('svg');
+          if (!svg) return;
+          
+          const rect = svg.getBoundingClientRect();
+          // Calculate the scale factors between SVG viewport and actual display size
+          const scaleX = 400 / rect.width;  // 400 is the SVG viewBox width
+          const scaleY = 200 / rect.height; // 200 is the SVG viewBox height
+          
+          // Calculate the coordinates in the SVG's coordinate system
+          const x = Math.round((event.clientX - rect.left) * scaleX);
+          const y = Math.round((event.clientY - rect.top) * scaleY);
+          const radius = Math.floor(Math.random() * 15) + 5;
+          
+          // Add the new point to the textarea
+          const textarea = document.getElementById(`${example.id}-data`);
+          textarea.value += `\n${x},${y},${radius}`;
+          updateCurve(example.id);
+        });
+      }
       
       contentDiv.appendChild(dataColumn);
       contentDiv.appendChild(visualColumn);
