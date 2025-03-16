@@ -3,11 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Disk B-Spline Test Harness</title>
+  <title>Disk B-Spline Curves Demo</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       margin: 20px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .github-link {
+      font-size: 0.9em;
     }
     .container {
       display: flex;
@@ -73,12 +82,15 @@
   </style>
 </head>
 <body>
-  <h1>Disk B-Spline Test Harness</h1>
+  <div class="header">
+    <h1>Disk B-Spline Curves Demo</h1>
+    <a href="https://github.com/BobPritchett/dbsc-svg" class="github-link" target="_blank">View on GitHub</a>
+  </div>
   
   <div class="controls" style="margin-bottom: 20px;">
-    <label><input type="checkbox" id="showSkeletonToggle" checked> Show Skeleton Path</label>
-    <label style="margin-left: 20px;"><input type="checkbox" id="showNormalsToggle" checked> Show Normal Vectors</label>
-    <label style="margin-left: 20px;"><input type="checkbox" id="showControlDisksToggle" checked> Show Control Disks</label>
+    <label><input type="checkbox" id="showSkeletonToggle"> Show Skeleton Path</label>
+    <label style="margin-left: 20px;"><input type="checkbox" id="showNormalsToggle"> Show Normal Vectors</label>
+    <label style="margin-left: 20px;"><input type="checkbox" id="showControlDisksToggle"> Show Control Disks</label>
   </div>
   
   <div class="container" id="examples-container">
@@ -99,14 +111,13 @@
       {
         id: "example1",
         title: "Example 1: Simple Variable Width Curve",
-        fillColor: "steelblue",
+        fillColor: "black",
         data: "50,150,10\n150,50,25\n250,150,15\n350,100,5"
       },
       {
         id: "example2",
         title: "Example 2: Complex Variable Width Curve",
-        fillColor: "purple",
-        opacity: 0.7,
+        fillColor: "black",
         data: "50,100,5\n100,50,20\n150,150,30\n200,60,15\n250,120,25\n300,80,10\n350,100,5"
       },
       {
@@ -118,17 +129,41 @@
       {
         id: "example4",
         title: "Example 4: Calligraphic Effect",
-        fillColor: "#333",
+        fillColor: "black",
         data: "50,100,3\n100,80,8\n150,50,20\n200,80,30\n250,150,15\n300,120,7\n350,100,3"
       },
       {
         id: "example5",
         title: "Example 5: Interactive Curve",
-        fillColor: "green",
-        opacity: 0.7,
+        fillColor: "black",
         data: "50,100,10\n150,100,15\n250,100,20\n350,100,10"
       }
     ];
+
+    // Define visual styling options
+    const visualOptions = {
+      curve: {
+        normalColor: "black",           // Default curve color when no diagnostics shown
+        diagnosticColor: "black",       // Curve color when diagnostics are shown
+        diagnosticOpacity: 0.3          // Opacity when diagnostics are shown
+      },
+      skeleton: {
+        color: "#0066cc",               // Skeleton path color
+        width: 2                        // Skeleton path width
+      },
+      normals: {
+        positiveColor: "blue",          // Positive normal vector color
+        negativeColor: "red",           // Negative normal vector color
+        width: 1.5                      // Normal vector line width
+      },
+      controlDisks: {
+        lineColor: "#666",              // Control disk outline color
+        centerColor: "#cc3300",         // Control point center color
+        textColor: "#333",              // Text label color
+        lineWidth: 1,                   // Line width for outlines
+        dotSize: 3                      // Size of center point
+      }
+    };
 
     // Helper function to create SVG content
     function createSVG(width, height, content) {
@@ -213,6 +248,15 @@
       return container;
     }
 
+    // Function to check if any diagnostics are enabled
+    function areDiagnosticsEnabled() {
+      return (
+        document.getElementById('showSkeletonToggle').checked ||
+        document.getElementById('showNormalsToggle').checked ||
+        document.getElementById('showControlDisksToggle').checked
+      );
+    }
+
     // Function to update a curve based on textarea data
     function updateCurve(exampleId) {
       const textarea = document.getElementById(`${exampleId}-data`);
@@ -246,10 +290,13 @@
       const showSkeleton = document.getElementById('showSkeletonToggle').checked;
       const showNormals = document.getElementById('showNormalsToggle').checked;
       const showControlDisks = document.getElementById('showControlDisksToggle').checked;
+      const showDiagnostics = areDiagnosticsEnabled();
       
       // Generate paths
       const result = bspline.toSVGPath(100);
-      const controlCircles = showControlDisks ? bspline.controlDisksToSVG() : '';
+      
+      // Control disks with custom styling
+      const controlCircles = showControlDisks ? bspline.controlDisksToSVG(visualOptions.controlDisks) : '';
       
       // Add normal vectors visualization if enabled
       let normalLines = '';
@@ -262,23 +309,31 @@
           normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
                                x2="${disk.center.x + normal.x * disk.radius}" 
                                y2="${disk.center.y + normal.y * disk.radius}" 
-                               stroke="blue" stroke-width="1.5" />`;
+                               stroke="${visualOptions.normals.positiveColor}" 
+                               stroke-width="${visualOptions.normals.width}" />`;
+                               
           normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
                                x2="${disk.center.x - normal.x * disk.radius}" 
                                y2="${disk.center.y - normal.y * disk.radius}" 
-                               stroke="red" stroke-width="1.5" />`;
+                               stroke="${visualOptions.normals.negativeColor}" 
+                               stroke-width="${visualOptions.normals.width}" />`;
         }
       }
       
       // Create the skeleton path element if enabled
       const skeletonPathElement = showSkeleton ? 
-        `<path d="${result.skeletonPath}" fill="none" stroke="#333" stroke-width="2" class="skeleton-path" />` : '';
+        `<path d="${result.skeletonPath}" 
+              fill="none" 
+              stroke="${visualOptions.skeleton.color}" 
+              stroke-width="${visualOptions.skeleton.width}" 
+              class="skeleton-path" />` : '';
       
-      // Apply opacity if specified
-      const opacityAttr = example.opacity ? ` opacity="${example.opacity}"` : '';
+      // Choose appropriate fill color and opacity based on diagnostics
+      const fillColor = showDiagnostics ? visualOptions.curve.diagnosticColor : visualOptions.curve.normalColor;
+      const opacity = showDiagnostics ? visualOptions.curve.diagnosticOpacity : 1;
       
       const svgContent = `
-        <path d="${result.fillPath}" fill="${example.fillColor}"${opacityAttr} stroke="none" />
+        <path d="${result.fillPath}" fill="${fillColor}" opacity="${opacity}" stroke="none" />
         ${skeletonPathElement}
         ${controlCircles}
         ${normalLines}

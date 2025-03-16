@@ -363,9 +363,19 @@ class DiskBSpline {
 
   /**
    * Generate circles for visualizing the control disks
+   * @param {Object} options - Visual options for control disks
    * @returns {string} - SVG elements for control disks
    */
-  controlDisksToSVG() {
+  controlDisksToSVG(options = {}) {
+    const defaults = {
+      lineColor: "gray",
+      centerColor: "red",
+      textColor: "#333",
+      lineWidth: 1,
+      dotSize: 3,
+    };
+
+    const opts = { ...defaults, ...options };
     let circles = "";
 
     // First draw the centerline to better visualize the path
@@ -380,20 +390,22 @@ class DiskBSpline {
         }
       });
 
-      centerline += `" stroke="gray" stroke-width="1" stroke-dasharray="5,5" fill="none" />`;
+      centerline += `" stroke="${opts.lineColor}" stroke-width="${opts.lineWidth}" stroke-dasharray="2,2" fill="none" />`;
       circles += centerline;
     }
 
     // Then draw the control disks
-    this.controlDisks.forEach((disk, index) => {
+    this.controlDisks.forEach((disk) => {
       // Disk outline
-      circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${disk.radius}" fill="none" stroke="gray" stroke-dasharray="5,5" />`;
+      circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${disk.radius}" fill="none" stroke="${opts.lineColor}" stroke-dasharray="2,2" />`;
       // Center point
-      circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="3" fill="red" />`;
-      // Index label
+      circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${opts.dotSize}" fill="${opts.centerColor}" />`;
+      // Radius label
       circles += `<text x="${disk.center.x + 5}" y="${
         disk.center.y - 5
-      }" font-size="10">${index}</text>`;
+      }" font-size="10" fill="${opts.textColor}">${Math.round(
+        disk.radius
+      )}</text>`;
     });
 
     return circles;
