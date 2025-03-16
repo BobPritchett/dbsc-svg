@@ -23,10 +23,21 @@ Disk B-Splines are a mathematical tool for generating smooth variable-width curv
 
 ## Mathematics Background
 
-This implementation is based on research in computational geometry regarding variable-width curve interpolation. The key insight is to extend traditional B-Splines (which interpolate points) to interpolate disks instead. The implementation follows concepts described in papers like:
+This implementation leverages computational geometry to extend traditional B-Splines from point interpolation to disk interpolation for variable-width curves. It builds on research from:
 
-- ["Variable-width spline curves"](https://dl.acm.org/doi/10.1145/1178477.1178489) by Yang and Kim
-- ["Disk B-spline: A Volume Preserving Parametric Curve"](https://doi.org/10.1016/j.cad.2008.12.008) by Bas and Erleben
+- **[Artistic Brushstroke Representation and Animation with Disk B-Spline Curve](https://dl.acm.org/doi/10.1145/1178477.1178489)** [PDF](https://www.researchgate.net/profile/Xian-Xiao-10/publication/220982699_Artistic_brushstroke_representation_and_animation_with_disk_B-spline_curve/links/5630ce4508ae2df441bb7e98/Artistic-brushstroke-representation-and-animation-with-disk-B-spline-curve.pdf)
+  _Authors_: Hock Soon Seah, Zhongke Wu, Feng Tian, Xian Xiao, Boya Xie  
+  _Published_: ACE '05, 2005, pp. 88–93  
+  _Publisher_: ACM, New York, NY, USA  
+  _Keywords_: disk B-spline curve, brushstroke, animation  
+  _Summary_: Introduces disk B-spline curves (DBSC) for modeling brushstrokes and animation, supporting 2D regions, centerline attributes, and efficient frame interpolation.
+
+- **[Skeleton-Based Parametric 2-D Region Representation: Disk B-Spline Curves](https://doi.org/10.1109/MCG.2021.3069847)**  
+  _Authors_: Zhongke Wu, Xingce Wang, Shaolong Liu, Quan Chen, Hock Soon Seah, Feng Tian  
+  _Published_: IEEE Computer Graphics and Applications, 2021, vol. 41, no. 3, pp. 59–70  
+  _Publisher_: IEEE  
+  _Keywords_: splines, 2D displays, animation, geometry  
+  _Summary_: Presents a skeleton-based approach using disk B-spline curves for parametric 2D region representation, enhancing computational modeling of shapes.
 
 ## How It Works
 
@@ -75,7 +86,3 @@ This code was generated with the assistance of AI. The implementation follows ma
 MIT License
 
 ## References
-
-- [Variable-width spline curves](https://dl.acm.org/doi/10.1145/1178477.1178489)
-- [Disk B-spline: A Volume Preserving Parametric Curve](https://doi.org/10.1016/j.cad.2008.12.008)
-- [Computational Geometry: Algorithms and Applications](https://www.springer.com/gp/book/9783540779735)

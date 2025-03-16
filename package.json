@@ -7,7 +7,13 @@
     "type": "git",
     "url": "git+https://github.com/BobPritchett/dbsc-svg.git"
   },
-  "keywords": ["SVG", "utility", "spline", "curve", "shape"],
+  "keywords": [
+    "SVG",
+    "utility",
+    "spline",
+    "curve",
+    "shape"
+  ],
   "author": "Bob Pritchett",
   "license": "MIT"
 }
