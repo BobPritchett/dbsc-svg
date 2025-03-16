@@ -7,61 +7,79 @@
     <style>
       body {
         font-family: Arial, sans-serif;
-        margin: 20px;
+        margin: 0;
+        padding: 24px;
+        line-height: 1.5;
       }
       .header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 15px;
+        margin-bottom: 32px;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 32px;
       }
       .github-link {
-        font-size: 0.9em;
+        font-size: 16px;
       }
       .container {
         display: flex;
         flex-direction: column;
-        gap: 20px;
+        gap: 24px;
       }
       .curve-container {
         border: 1px solid #ccc;
-        padding: 10px;
-        border-radius: 5px;
+        padding: 24px;
+        border-radius: 8px;
         display: flex;
         flex-direction: column;
+        gap: 16px;
       }
       .example-content {
         display: flex;
-        gap: 20px;
+        gap: 24px;
       }
       .data-column {
         flex: 1;
         display: flex;
         flex-direction: column;
+        gap: 8px;
       }
       .visual-column {
         flex: 2;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
       }
       .controls {
-        margin-bottom: 10px;
         display: flex;
-        gap: 10px;
+        gap: 16px;
         align-items: center;
+        flex-wrap: wrap;
+      }
+      .controls label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
       h2 {
-        margin-top: 0;
+        margin: 0 0 16px 0;
+        font-size: 24px;
       }
       svg {
         background-color: #f8f8f8;
         width: 100%;
         height: 100%;
         min-height: 200px;
+        border-radius: 4px;
       }
       .log {
         font-family: monospace;
         background-color: #f0f0f0;
-        padding: 10px;
-        border-radius: 5px;
+        padding: 16px;
+        border-radius: 8px;
         max-height: 200px;
         overflow-y: auto;
       }
@@ -71,16 +89,19 @@
         min-height: 140px;
         font-family: monospace;
         resize: vertical;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
       }
       .error-message {
         color: red;
-        font-size: 0.9em;
-        margin-top: 5px;
+        font-size: 14px;
+        margin-top: 4px;
       }
       .instructions {
-        font-size: 0.9em;
+        font-size: 14px;
         color: #555;
-        margin-bottom: 8px;
+        margin: 0;
       }
       .no-select {
         user-select: none;
@@ -89,16 +110,27 @@
         -ms-user-select: none;
       }
       select {
-        padding: 5px;
+        padding: 8px;
         font-size: 14px;
         border-radius: 4px;
         border: 1px solid #ccc;
       }
+      button {
+        padding: 8px 16px;
+        font-size: 14px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        background: white;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #f5f5f5;
+      }
       .footer {
-        margin-top: 20px;
-        padding-top: 20px;
+        margin-top: 32px;
+        padding-top: 24px;
         border-top: 1px solid #ccc;
-        font-size: 0.9em;
+        font-size: 14px;
         color: #666;
       }
       .footer a {
@@ -107,6 +139,9 @@
       }
       .footer a:hover {
         text-decoration: underline;
+      }
+      #debugSection {
+        margin-top: 32px;
       }
     </style>
   </head>
@@ -162,7 +197,13 @@
             <textarea id="pointsData"></textarea>
             <div id="errorMessage" class="error-message"></div>
           </div>
-          <div class="visual-column" id="visualArea"></div>
+          <div class="visual-column">
+            <div class="instructions">
+              Click to add a point, or click and drag to add a point and set its
+              radius.
+            </div>
+            <div id="visualArea"></div>
+          </div>
         </div>
       </div>
     </div>
