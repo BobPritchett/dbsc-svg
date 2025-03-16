@@ -111,6 +111,10 @@
         ><input type="checkbox" id="showControlDisksToggle" checked /> Show
         Control Disks</label
       >
+      <label style="margin-left: 20px"
+        ><input type="checkbox" id="showDebugToggle" checked /> Show Debug
+        Log</label
+      >
     </div>
 
     <div class="container" id="examples-container">
@@ -435,7 +439,10 @@
         }
 
         // Create B-spline
-        const bspline = new DiskBSpline(controlDisks);
+        const bspline = new DiskBSpline(controlDisks, {
+          degree: 3,
+          debug: document.getElementById("showDebugToggle")?.checked || false,
+        });
 
         // Get toggle states
         const showSkeleton =
@@ -544,6 +551,9 @@
       document
         .getElementById("showControlDisksToggle")
         .addEventListener("change", redrawAllExamples);
+      document
+        .getElementById("showDebugToggle")
+        ?.addEventListener("change", redrawAllExamples);
     </script>
   </body>
 </html>

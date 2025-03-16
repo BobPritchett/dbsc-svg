@@ -6,29 +6,34 @@ class DiskBSpline {
   /**
    * Creates a new DiskBSpline instance
    * @param {Array} controlDisks - Array of control disks, each with center (x,y) and radius
-   * @param {number} degree - Degree of the B-spline (default: 3)
+   * @param {Object} options - Options object
+   * @param {number} options.degree - Degree of the B-spline (default: 3)
+   * @param {boolean} options.debug - Whether to enable debug logging (default: false)
    */
-  constructor(controlDisks = [], degree = 3) {
+  constructor(controlDisks = [], options = {}) {
     this.controlDisks = controlDisks;
-    this.degree = degree;
+    this.degree = options.degree ?? 3;
+    this.debug = options.debug ?? false;
     this.knots = [];
     this.generateUniformKnots();
 
     // Debug logging
-    this.logMessage(
-      `Created B-spline with ${controlDisks.length} control disks and degree ${degree}`
-    );
-    if (controlDisks.length > 0) {
+    if (this.debug) {
       this.logMessage(
-        `First control disk: (${controlDisks[0].center.x}, ${controlDisks[0].center.y}), r=${controlDisks[0].radius}`
+        `Created B-spline with ${controlDisks.length} control disks and degree ${this.degree}`
       );
-      this.logMessage(
-        `Last control disk: (${
-          controlDisks[controlDisks.length - 1].center.x
-        }, ${controlDisks[controlDisks.length - 1].center.y}), r=${
-          controlDisks[controlDisks.length - 1].radius
-        }`
-      );
+      if (controlDisks.length > 0) {
+        this.logMessage(
+          `First control disk: (${controlDisks[0].center.x}, ${controlDisks[0].center.y}), r=${controlDisks[0].radius}`
+        );
+        this.logMessage(
+          `Last control disk: (${
+            controlDisks[controlDisks.length - 1].center.x
+          }, ${controlDisks[controlDisks.length - 1].center.y}), r=${
+            controlDisks[controlDisks.length - 1].radius
+          }`
+        );
+      }
     }
   }
 
@@ -37,6 +42,8 @@ class DiskBSpline {
    * @param {string} message - Message to log
    */
   logMessage(message) {
+    if (!this.debug) return;
+
     const logElement = document.getElementById("log");
     if (logElement) {
       const logEntry = document.createElement("div");

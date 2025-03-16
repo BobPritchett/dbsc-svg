@@ -21,7 +21,7 @@ The `DiskBSpline` class in `index.js` is the core implementation for generating 
 
 ### Creating a DiskBSpline Instance
 
-To create a new `DiskBSpline` instance, you need to provide an array of control disks. Each control disk is an object with `center` (an object with `x` and `y` properties) and `radius` properties.
+To create a new `DiskBSpline` instance, you need to provide an array of control disks and an optional options object. Each control disk is an object with `center` (an object with `x` and `y` properties) and `radius` properties.
 
 ```javascript
 const controlDisks = [
@@ -30,7 +30,35 @@ const controlDisks = [
   { center: { x: 150, y: 50 }, radius: 15 },
 ];
 
+// Create with default options (degree: 3, debug: false)
 const diskBSpline = new DiskBSpline(controlDisks);
+
+// Or specify options
+const diskBSpline = new DiskBSpline(controlDisks, {
+  degree: 3, // Degree of the B-spline (default: 3)
+  debug: true, // Enable debug logging (default: false)
+});
+```
+
+### Debug Logging
+
+When debug logging is enabled, the `DiskBSpline` class will log detailed information about its operations to both the browser console and a log element on the page (if one exists with id "log"). This includes:
+
+- Creation details (number of control disks, degree)
+- Control disk information (first and last points)
+- Warning messages about insufficient control points
+- Parameter clamping information
+- Basis function calculations
+- Path generation details
+
+The log entries are timestamped and include both informational messages and warnings about potential issues.
+
+```javascript
+// Example log output
+[10:30:45] Created B-spline with 3 control disks and degree 3
+[10:30:45] First control disk: (50, 50), r=10
+[10:30:45] Last control disk: (150, 50), r=15
+[10:30:45] WARNING: Not enough control points (3) for the specified degree (3)
 ```
 
 ### Generating the Curve
