@@ -334,23 +334,84 @@ class DiskBSpline {
       });
     }
 
-    // Generate the variable-width path using straight lines between points
-    // Create the upper edge
-    let pathData = `M ${upperPoints[0].x} ${upperPoints[0].y}`;
-    for (let i = 1; i < upperPoints.length; i++) {
-      pathData += ` L ${upperPoints[i].x} ${upperPoints[i].y}`;
+    // Get first and last disks for end caps
+    const firstDisk = disks[0];
+    const lastDisk = disks[disks.length - 1];
+    const firstNormal = normals[0];
+    const lastNormal = normals[normals.length - 1];
+
+    // Calculate tangent vectors (perpendicular to normals)
+    const firstTangent = { x: firstNormal.y, y: -firstNormal.x };
+    const lastTangent = { x: lastNormal.y, y: -lastNormal.x };
+
+    // Generate the variable-width path with rounded end caps
+    let pathData = "";
+
+    // Start point - add rounded cap if radius > 0
+    if (firstDisk.radius > 0) {
+      // Start at upper point of first disk
+      const upperFirstPoint = upperPoints[0];
+      pathData = `M ${upperFirstPoint.x} ${upperFirstPoint.y}`;
+
+      // Add semicircle for start cap
+      // We'll draw a 180-degree arc from the upper point to the lower point
+      const lowerFirstPoint = lowerPoints[0];
+
+      // Flip the sweep flag for the start cap to ensure correct orientation
+      // For the start cap, we need to consider the direction of the path
+      const sweepFlag =
+        firstTangent.x * (upperFirstPoint.y - lowerFirstPoint.y) -
+          firstTangent.y * (upperFirstPoint.x - lowerFirstPoint.x) >
+        0
+          ? 1
+          : 0;
+
+      pathData += ` A ${firstDisk.radius} ${firstDisk.radius} 0 0 ${sweepFlag} ${lowerFirstPoint.x} ${lowerFirstPoint.y}`;
+    } else {
+      // For zero radius, just connect the points directly
+      pathData = `M ${upperPoints[0].x} ${upperPoints[0].y} L ${lowerPoints[0].x} ${lowerPoints[0].y}`;
     }
 
-    // Add the lower edge in reverse order
-    for (let i = lowerPoints.length - 1; i >= 0; i--) {
+    // Draw the lower edge from start to end
+    for (let i = 1; i < lowerPoints.length; i++) {
       pathData += ` L ${lowerPoints[i].x} ${lowerPoints[i].y}`;
+    }
+
+    // End point - add rounded cap if radius > 0
+    if (lastDisk.radius > 0) {
+      // Add semicircle for end cap
+      // We'll draw a 180-degree arc from the lower point to the upper point
+      const lowerLastPoint = lowerPoints[lowerPoints.length - 1];
+      const upperLastPoint = upperPoints[upperPoints.length - 1];
+
+      // Determine the arc direction - we want the arc to curve away from the path
+      // Use the tangent direction to determine sweep flag
+      // We need to ensure we're drawing the outer arc, not the inner arc
+      const sweepFlag =
+        lastTangent.x * (lowerLastPoint.y - upperLastPoint.y) -
+          lastTangent.y * (lowerLastPoint.x - upperLastPoint.x) >
+        0
+          ? 0
+          : 1;
+
+      pathData += ` A ${lastDisk.radius} ${lastDisk.radius} 0 0 ${sweepFlag} ${upperLastPoint.x} ${upperLastPoint.y}`;
+    } else {
+      // For zero radius, just connect the points directly
+      pathData += ` L ${upperPoints[upperPoints.length - 1].x} ${
+        upperPoints[upperPoints.length - 1].y
+      }`;
+    }
+
+    // Draw the upper edge from end to start
+    for (let i = upperPoints.length - 2; i >= 1; i--) {
+      pathData += ` L ${upperPoints[i].x} ${upperPoints[i].y}`;
     }
 
     // Close the path
     pathData += " Z";
 
     this.logMessage(
-      `Generated SVG path with ${disks.length} points using normals`
+      `Generated SVG path with ${disks.length} points using normals and rounded end caps`
     );
 
     return {
