@@ -47,40 +47,13 @@
     <label style="margin-left: 20px;"><input type="checkbox" id="showControlDisksToggle" checked> Show Control Disks</label>
   </div>
   
-  <div class="container">
-    <div class="curve-container">
-      <h2>Example 1: Simple Variable Width Curve</h2>
-      <div id="example1"></div>
-    </div>
-    
-    <div class="curve-container">
-      <h2>Example 2: Complex Variable Width Curve</h2>
-      <div id="example2"></div>
-    </div>
-    
-    <div class="curve-container">
-      <h2>Example 3: Calligraphic Stroke</h2>
-      <div id="example3"></div>
-    </div>
-    
-    <div class="curve-container">
-      <h2>Example 4: Calligraphic Effect</h2>
-      <div id="example4"></div>
-    </div>
-
-    <div class="curve-container">
-      <h2>Example 5: Interactive Curve</h2>
-      <div class="controls">
-        <button id="addDiskBtn">Add Disk</button>
-        <button id="clearBtn">Clear</button>
-      </div>
-      <div id="example5"></div>
-    </div>
-    
-    <div>
-      <h2>Debug Log</h2>
-      <div id="log" class="log"></div>
-    </div>
+  <div class="container" id="examples-container">
+    <!-- Examples will be dynamically generated here -->
+  </div>
+  
+  <div>
+    <h2>Debug Log</h2>
+    <div id="log" class="log"></div>
   </div>
 
   <!-- Import the DiskBSpline library -->
@@ -94,20 +67,87 @@
       </svg>`;
     }
 
-    // Generate Example 1: Simple Variable Width Curve
-    function createExample1() {
-      const container = document.getElementById('example1');
+    // Define examples data
+    const examplesData = [
+      {
+        id: "example1",
+        title: "Example 1: Simple Variable Width Curve",
+        fillColor: "steelblue",
+        controlDisks: [
+          { center: { x: 50, y: 150 }, radius: 10 },
+          { center: { x: 150, y: 50 }, radius: 25 },
+          { center: { x: 250, y: 150 }, radius: 15 },
+          { center: { x: 350, y: 100 }, radius: 5 }
+        ]
+      },
+      {
+        id: "example2",
+        title: "Example 2: Complex Variable Width Curve",
+        fillColor: "purple",
+        opacity: 0.7,
+        controlDisks: [
+          { center: { x: 50, y: 100 }, radius: 5 },
+          { center: { x: 100, y: 50 }, radius: 20 },
+          { center: { x: 150, y: 150 }, radius: 30 },
+          { center: { x: 200, y: 60 }, radius: 15 },
+          { center: { x: 250, y: 120 }, radius: 25 },
+          { center: { x: 300, y: 80 }, radius: 10 },
+          { center: { x: 350, y: 100 }, radius: 5 }
+        ]
+      },
+      {
+        id: "example3",
+        title: "Example 3: Calligraphic Stroke",
+        fillColor: "black",
+        controlDisks: [
+          { center: { x: 50, y: 100 }, radius: 3 },
+          { center: { x: 100, y: 120 }, radius: 10 },
+          { center: { x: 150, y: 80 }, radius: 15 },
+          { center: { x: 200, y: 150 }, radius: 20 },
+          { center: { x: 250, y: 50 }, radius: 15 },
+          { center: { x: 300, y: 120 }, radius: 10 },
+          { center: { x: 350, y: 100 }, radius: 3 }
+        ]
+      },
+      {
+        id: "example4",
+        title: "Example 4: Calligraphic Effect",
+        fillColor: "#333",
+        controlDisks: [
+          { center: { x: 50, y: 100 }, radius: 3 },
+          { center: { x: 100, y: 80 }, radius: 8 },
+          { center: { x: 150, y: 50 }, radius: 20 },
+          { center: { x: 200, y: 80 }, radius: 30 },
+          { center: { x: 250, y: 150 }, radius: 15 },
+          { center: { x: 300, y: 120 }, radius: 7 },
+          { center: { x: 350, y: 100 }, radius: 3 }
+        ]
+      }
+    ];
+
+    // Function to create a curve container
+    function createCurveContainer(example) {
+      const container = document.createElement('div');
+      container.className = 'curve-container';
       
-      // Create control disks
-      const controlDisks = [
-        { center: { x: 50, y: 150 }, radius: 10 },
-        { center: { x: 150, y: 50 }, radius: 25 },
-        { center: { x: 250, y: 150 }, radius: 15 },
-        { center: { x: 350, y: 100 }, radius: 5 }
-      ];
+      const heading = document.createElement('h2');
+      heading.textContent = example.title;
+      container.appendChild(heading);
+      
+      const curveDiv = document.createElement('div');
+      curveDiv.id = example.id;
+      container.appendChild(curveDiv);
+      
+      return container;
+    }
+
+    // Unified function to render a standard curve example
+    function renderCurveExample(example) {
+      const container = document.getElementById(example.id);
+      if (!container) return;
       
       // Create B-spline
-      const bspline = new DiskBSpline(controlDisks);
+      const bspline = new DiskBSpline(example.controlDisks);
       
       // Get toggle states
       const showSkeleton = document.getElementById('showSkeletonToggle').checked;
@@ -141,8 +181,11 @@
       const skeletonPathElement = showSkeleton ? 
         `<path d="${result.skeletonPath}" fill="none" stroke="#333" stroke-width="2" class="skeleton-path" />` : '';
       
+      // Apply opacity if specified
+      const opacityAttr = example.opacity ? ` opacity="${example.opacity}"` : '';
+      
       const svgContent = `
-        <path d="${result.fillPath}" fill="steelblue" stroke="none" />
+        <path d="${result.fillPath}" fill="${example.fillColor}"${opacityAttr} stroke="none" />
         ${skeletonPathElement}
         ${controlCircles}
         ${normalLines}
@@ -150,195 +193,40 @@
       
       // Create SVG
       container.innerHTML = createSVG(400, 200, svgContent);
+      
+      return bspline;
     }
 
-    // Generate Example 2: Complex Variable Width Curve
-    function createExample2() {
-      const container = document.getElementById('example2');
-      
-      // Create control disks with varying radii
-      const controlDisks = [
-        { center: { x: 50, y: 100 }, radius: 5 },
-        { center: { x: 100, y: 50 }, radius: 20 },
-        { center: { x: 150, y: 150 }, radius: 30 },
-        { center: { x: 200, y: 60 }, radius: 15 },
-        { center: { x: 250, y: 120 }, radius: 25 },
-        { center: { x: 300, y: 80 }, radius: 10 },
-        { center: { x: 350, y: 100 }, radius: 5 }
-      ];
-      
-      // Create B-spline
-      const bspline = new DiskBSpline(controlDisks);
-      
-      // Get toggle states
-      const showSkeleton = document.getElementById('showSkeletonToggle').checked;
-      const showNormals = document.getElementById('showNormalsToggle').checked;
-      const showControlDisks = document.getElementById('showControlDisksToggle').checked;
-      
-      // Generate paths
-      const result = bspline.toSVGPath(100);
-      const controlCircles = showControlDisks ? bspline.controlDisksToSVG() : '';
-      
-      // Add normal vectors visualization if enabled
-      let normalLines = '';
-      
-      if (showNormals) {
-        for (let i = 0; i < result.disks.length; i += Math.floor(result.disks.length / 15)) {
-          const disk = result.disks[i];
-          const normal = result.normals[i];
-          
-          normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
-                               x2="${disk.center.x + normal.x * disk.radius}" 
-                               y2="${disk.center.y + normal.y * disk.radius}" 
-                               stroke="blue" stroke-width="1.5" />`;
-          normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
-                               x2="${disk.center.x - normal.x * disk.radius}" 
-                               y2="${disk.center.y - normal.y * disk.radius}" 
-                               stroke="red" stroke-width="1.5" />`;
-        }
-      }
-      
-      // Create the skeleton path element if enabled
-      const skeletonPathElement = showSkeleton ? 
-        `<path d="${result.skeletonPath}" fill="none" stroke="#333" stroke-width="2" class="skeleton-path" />` : '';
-      
-      const svgContent = `
-        <path d="${result.fillPath}" fill="purple" stroke="none" opacity="0.7" />
-        ${skeletonPathElement}
-        ${controlCircles}
-        ${normalLines}
-      `;
-      
-      // Create SVG
-      container.innerHTML = createSVG(400, 200, svgContent);
-    }
-
-    // Generate Example 3: Calligraphic Stroke
-    function createExample3() {
-      const container = document.getElementById('example3');
-      
-      // Create control disks to simulate a calligraphic stroke
-      const controlDisks = [
-        { center: { x: 50, y: 100 }, radius: 3 },
-        { center: { x: 100, y: 120 }, radius: 10 },
-        { center: { x: 150, y: 80 }, radius: 15 },
-        { center: { x: 200, y: 150 }, radius: 20 },
-        { center: { x: 250, y: 50 }, radius: 15 },
-        { center: { x: 300, y: 120 }, radius: 10 },
-        { center: { x: 350, y: 100 }, radius: 3 }
-      ];
-      
-      // Create B-spline
-      const bspline = new DiskBSpline(controlDisks);
-      
-      // Get toggle states
-      const showSkeleton = document.getElementById('showSkeletonToggle').checked;
-      const showNormals = document.getElementById('showNormalsToggle').checked;
-      const showControlDisks = document.getElementById('showControlDisksToggle').checked;
-      
-      // Generate paths
-      const result = bspline.toSVGPath(100);
-      const controlCircles = showControlDisks ? bspline.controlDisksToSVG() : '';
-      
-      // Add normal vectors visualization if enabled
-      let normalLines = '';
-      
-      if (showNormals) {
-        for (let i = 0; i < result.disks.length; i += Math.floor(result.disks.length / 15)) {
-          const disk = result.disks[i];
-          const normal = result.normals[i];
-          
-          normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
-                               x2="${disk.center.x + normal.x * disk.radius}" 
-                               y2="${disk.center.y + normal.y * disk.radius}" 
-                               stroke="blue" stroke-width="1.5" />`;
-          normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
-                               x2="${disk.center.x - normal.x * disk.radius}" 
-                               y2="${disk.center.y - normal.y * disk.radius}" 
-                               stroke="red" stroke-width="1.5" />`;
-        }
-      }
-      
-      // Create the skeleton path element if enabled
-      const skeletonPathElement = showSkeleton ? 
-        `<path d="${result.skeletonPath}" fill="none" stroke="#333" stroke-width="2" class="skeleton-path" />` : '';
-      
-      const svgContent = `
-        <path d="${result.fillPath}" fill="black" stroke="none" />
-        ${skeletonPathElement}
-        ${controlCircles}
-        ${normalLines}
-      `;
-      
-      // Create SVG
-      container.innerHTML = createSVG(400, 200, svgContent);
-    }
-
-    // Generate Example 4: Calligraphic Effect
-    function createExample4() {
-      const container = document.getElementById('example4');
-      
-      // Create control disks to simulate a calligraphic pen stroke
-      // Disks vary from thin to thick and back to thin to show dramatic variable width
-      const controlDisks = [
-        { center: { x: 50, y: 100 }, radius: 3 },
-        { center: { x: 100, y: 80 }, radius: 8 },
-        { center: { x: 150, y: 50 }, radius: 20 },
-        { center: { x: 200, y: 80 }, radius: 30 },
-        { center: { x: 250, y: 150 }, radius: 15 },
-        { center: { x: 300, y: 120 }, radius: 7 },
-        { center: { x: 350, y: 100 }, radius: 3 }
-      ];
-      
-      // Create B-spline
-      const bspline = new DiskBSpline(controlDisks);
-      
-      // Get toggle states
-      const showSkeleton = document.getElementById('showSkeletonToggle').checked;
-      const showNormals = document.getElementById('showNormalsToggle').checked;
-      const showControlDisks = document.getElementById('showControlDisksToggle').checked;
-      
-      // Generate paths
-      const result = bspline.toSVGPath(100);
-      const controlCircles = showControlDisks ? bspline.controlDisksToSVG() : '';
-      
-      // Add normal vectors visualization if enabled
-      let normalLines = '';
-      
-      if (showNormals) {
-        for (let i = 0; i < result.disks.length; i += Math.floor(result.disks.length / 15)) {
-          const disk = result.disks[i];
-          const normal = result.normals[i];
-          
-          normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
-                               x2="${disk.center.x + normal.x * disk.radius}" 
-                               y2="${disk.center.y + normal.y * disk.radius}" 
-                               stroke="blue" stroke-width="1.5" />`;
-          normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
-                               x2="${disk.center.x - normal.x * disk.radius}" 
-                               y2="${disk.center.y - normal.y * disk.radius}" 
-                               stroke="red" stroke-width="1.5" />`;
-        }
-      }
-      
-      // Create the skeleton path element if enabled
-      const skeletonPathElement = showSkeleton ? 
-        `<path d="${result.skeletonPath}" fill="none" stroke="#333" stroke-width="2" class="skeleton-path" />` : '';
-      
-      const svgContent = `
-        <path d="${result.fillPath}" fill="#333" stroke="none" />
-        ${skeletonPathElement}
-        ${controlCircles}
-        ${normalLines}
-      `;
-      
-      // Create SVG
-      container.innerHTML = createSVG(400, 200, svgContent);
-    }
-
-    // Generate Example 5: Interactive Curve
+    // Create the interactive Example 5
     function createExample5() {
-      const container = document.getElementById('example5');
+      const container = document.createElement('div');
+      container.className = 'curve-container';
+      
+      const heading = document.createElement('h2');
+      heading.textContent = 'Example 5: Interactive Curve';
+      container.appendChild(heading);
+      
+      const controlsDiv = document.createElement('div');
+      controlsDiv.className = 'controls';
+      
+      const addButton = document.createElement('button');
+      addButton.id = 'addDiskBtn';
+      addButton.textContent = 'Add Disk';
+      
+      const clearButton = document.createElement('button');
+      clearButton.id = 'clearBtn';
+      clearButton.textContent = 'Clear';
+      
+      controlsDiv.appendChild(addButton);
+      controlsDiv.appendChild(clearButton);
+      container.appendChild(controlsDiv);
+      
+      const curveDiv = document.createElement('div');
+      curveDiv.id = 'example5';
+      container.appendChild(curveDiv);
+      
+      document.getElementById('examples-container').appendChild(container);
+      
       const width = 400;
       const height = 200;
       
@@ -395,10 +283,11 @@
         `;
         
         // Create SVG
-        container.innerHTML = createSVG(width, height, svgContent);
+        const example5Div = document.getElementById('example5');
+        example5Div.innerHTML = createSVG(width, height, svgContent);
         
         // Add event listener to the SVG
-        const svg = container.querySelector('svg');
+        const svg = example5Div.querySelector('svg');
         svg.addEventListener('click', (event) => {
           // Get click coordinates relative to the SVG
           const rect = svg.getBoundingClientRect();
@@ -448,21 +337,35 @@
       });
     }
 
-    // Function to redraw all examples
-    function redrawAllExamples() {
-      createExample1();
-      createExample2();
-      createExample3();
-      createExample4();
+    // Initialize all examples
+    function initExamples() {
+      const container = document.getElementById('examples-container');
+      
+      // Create standard examples
+      examplesData.forEach(example => {
+        container.appendChild(createCurveContainer(example));
+        renderCurveExample(example);
+      });
+      
+      // Create the interactive example
       createExample5();
     }
 
+    // Function to redraw all examples
+    function redrawAllExamples() {
+      examplesData.forEach(example => {
+        renderCurveExample(example);
+      });
+      
+      // Redraw example 5 by simulating a click on its clear button
+      const clearBtn = document.getElementById('clearBtn');
+      if (clearBtn) {
+        clearBtn.click();
+      }
+    }
+
     // Initialize all examples
-    createExample1();
-    createExample2();
-    createExample3();
-    createExample4();
-    createExample5();
+    initExamples();
     
     // Add event listeners for the toggle options
     document.getElementById('showSkeletonToggle').addEventListener('change', redrawAllExamples);
