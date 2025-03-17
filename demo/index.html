@@ -109,6 +109,15 @@
         -moz-user-select: none;
         -ms-user-select: none;
       }
+      .grabbing {
+        cursor: grabbing !important;
+      }
+      .grab {
+        cursor: grab !important;
+      }
+      .move {
+        cursor: move !important;
+      }
       select {
         padding: 8px;
         font-size: 14px;
@@ -300,6 +309,33 @@
               </svg>`;
       }
 
+      // Helper function to get control disks from textarea
+      function getControlDisks() {
+        const { controlDisks } = parseControlDisks(
+          document.getElementById("pointsData").value
+        );
+        return controlDisks;
+      }
+
+      // Helper function to update textarea from control disks
+      function updateTextareaFromDisks(controlDisks, isClosed) {
+        const textarea = document.getElementById("pointsData");
+        const lines = controlDisks.map(
+          (disk) => `${disk.center.x},${disk.center.y},${disk.radius}`
+        );
+        if (isClosed) {
+          lines.push("z");
+        }
+        textarea.value = lines.join("\n");
+      }
+
+      // Helper function to check if a point is inside a circle
+      function isPointInCircle(point, circle, radius) {
+        const dx = point.x - circle.x;
+        const dy = point.y - circle.y;
+        return dx * dx + dy * dy <= radius * radius;
+      }
+
       // Parse text data into control disks
       function parseControlDisks(text) {
         const lines = text.trim().split("\n");
@@ -428,6 +464,23 @@
           // Add normal vectors visualization if enabled
           let normalLines = "";
 
+          // Add hover effect for radius handles
+          if (showControlDisks) {
+            const controlDisks = getControlDisks();
+            controlDisks.forEach((disk, index) => {
+              // Add center point with move cursor class
+              normalLines += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${visualOptions.controlDisks.dotSize}" 
+                fill="${visualOptions.controlDisks.centerColor}" data-index="${index}" data-type="center" class="center-point" />`;
+
+              const handleX = disk.center.x + disk.radius;
+              const handleY = disk.center.y;
+              normalLines += `<circle cx="${handleX}" cy="${handleY}" r="${
+                visualOptions.controlDisks.dotSize / 2
+              }" 
+                fill="blue" data-index="${index}" data-type="radius" class="radius-handle" />`;
+            });
+          }
+
           if (showNormals) {
             for (
               let i = 0;
@@ -494,6 +547,32 @@
 
         // Create SVG
         visualDiv.innerHTML = createSVG(400, 200, svgContent);
+
+        // Add hover effect for radius handles
+        const radiusHandles = visualDiv.querySelectorAll(".radius-handle");
+        radiusHandles.forEach((handle) => {
+          handle.addEventListener("mouseenter", () => {
+            visualArea.classList.add("grab");
+          });
+          handle.addEventListener("mouseleave", () => {
+            if (!window.draggingRadiusHandle) {
+              visualArea.classList.remove("grab");
+            }
+          });
+        });
+
+        // Add hover effect for center points
+        const centerPoints = visualDiv.querySelectorAll(".center-point");
+        centerPoints.forEach((point) => {
+          point.addEventListener("mouseenter", () => {
+            visualArea.classList.add("move");
+          });
+          point.addEventListener("mouseleave", () => {
+            if (!window.draggingCenterPoint) {
+              visualArea.classList.remove("move");
+            }
+          });
+        });
       }
 
       // Initialize the demo
@@ -557,19 +636,75 @@
         window.startY = 0;
         window.currentX = 0;
         window.currentY = 0;
+        window.draggingRadiusHandle = false;
+        window.draggingDiskIndex = -1;
+        window.draggingCenterPoint = false;
+        window.draggingCenterIndex = -1;
 
         const handleMouseDown = (event) => {
           const svg = visualArea.querySelector("svg");
           if (!svg) return;
 
-          visualArea.classList.add("no-select");
-
           const rect = svg.getBoundingClientRect();
           const scaleX = 400 / rect.width;
           const scaleY = 200 / rect.height;
 
-          window.startX = Math.round((event.clientX - rect.left) * scaleX);
-          window.startY = Math.round((event.clientY - rect.top) * scaleY);
+          const clickX = Math.round((event.clientX - rect.left) * scaleX);
+          const clickY = Math.round((event.clientY - rect.top) * scaleY);
+
+          // Check if we clicked on a center point
+          const controlDisks = getControlDisks();
+          for (let i = 0; i < controlDisks.length; i++) {
+            const disk = controlDisks[i];
+            const centerRadius = visualOptions.controlDisks.dotSize;
+
+            if (
+              isPointInCircle(
+                { x: clickX, y: clickY },
+                { x: disk.center.x, y: disk.center.y },
+                centerRadius
+              )
+            ) {
+              window.draggingCenterPoint = true;
+              window.draggingCenterIndex = i;
+              window.startX = clickX;
+              window.startY = clickY;
+              visualArea.classList.add("no-select");
+              visualArea.classList.add("grabbing");
+              return;
+            }
+          }
+
+          // Check if we clicked on a radius handle
+          for (let i = 0; i < controlDisks.length; i++) {
+            const disk = controlDisks[i];
+            const handleX = disk.center.x + disk.radius;
+            const handleY = disk.center.y;
+            const handleRadius = visualOptions.controlDisks.dotSize / 2;
+
+            if (
+              isPointInCircle(
+                { x: clickX, y: clickY },
+                { x: handleX, y: handleY },
+                handleRadius
+              )
+            ) {
+              window.draggingRadiusHandle = true;
+              window.draggingDiskIndex = i;
+              window.startX = clickX;
+              window.startY = clickY;
+              visualArea.classList.add("no-select");
+              visualArea.classList.add("grabbing");
+              return;
+            }
+          }
+
+          // If we didn't click a handle or center point, handle as normal point creation
+          visualArea.classList.add("no-select");
+          visualArea.classList.add("grabbing");
+
+          window.startX = clickX;
+          window.startY = clickY;
           window.currentX = window.startX;
           window.currentY = window.startY;
 
@@ -583,7 +718,12 @@
         };
 
         const handleMouseMove = (event) => {
-          if (!window.isDragging) return;
+          if (
+            !window.isDragging &&
+            !window.draggingRadiusHandle &&
+            !window.draggingCenterPoint
+          )
+            return;
 
           const svg = visualArea.querySelector("svg");
           if (!svg) return;
@@ -595,22 +735,80 @@
           window.currentX = Math.round((event.clientX - rect.left) * scaleX);
           window.currentY = Math.round((event.clientY - rect.top) * scaleY);
 
-          const dx = (window.currentX - window.startX) / scaleX;
-          const dy = (window.currentY - window.startY) / scaleY;
-          const radius = Math.max(1, Math.round(Math.sqrt(dx * dx + dy * dy)));
+          if (window.draggingCenterPoint) {
+            // Update the center point position
+            const controlDisks = getControlDisks();
+            const isClosed = textarea.value.trim().toLowerCase().endsWith("z");
 
-          const lines = textarea.value.trim().split("\n");
-          lines[
-            lines.length - 1
-          ] = `${window.startX},${window.startY},${radius}`;
-          textarea.value = lines.join("\n");
-          updateCurve();
+            if (
+              window.draggingCenterIndex >= 0 &&
+              window.draggingCenterIndex < controlDisks.length
+            ) {
+              controlDisks[window.draggingCenterIndex].center.x =
+                window.currentX;
+              controlDisks[window.draggingCenterIndex].center.y =
+                window.currentY;
+
+              // Update textarea with new position
+              updateTextareaFromDisks(controlDisks, isClosed);
+              updateCurve();
+            }
+          } else if (window.draggingRadiusHandle) {
+            // Calculate new radius based on distance from center point
+            const controlDisks = getControlDisks();
+            const isClosed = textarea.value.trim().toLowerCase().endsWith("z");
+
+            // Update the radius of the dragged disk
+            if (
+              window.draggingDiskIndex >= 0 &&
+              window.draggingDiskIndex < controlDisks.length
+            ) {
+              const disk = controlDisks[window.draggingDiskIndex];
+              const dx = window.currentX - disk.center.x;
+              const dy = window.currentY - disk.center.y;
+              const newRadius = Math.max(
+                1,
+                Math.round(Math.sqrt(dx * dx + dy * dy))
+              );
+
+              controlDisks[window.draggingDiskIndex].radius = newRadius;
+
+              // Update textarea with new radius
+              updateTextareaFromDisks(controlDisks, isClosed);
+              updateCurve();
+            }
+          } else {
+            // Handle normal point creation radius
+            const dx = window.currentX - window.startX;
+            const dy = window.currentY - window.startY;
+            const radius = Math.max(
+              1,
+              Math.round(Math.sqrt(dx * dx + dy * dy))
+            );
+
+            const lines = textarea.value.trim().split("\n");
+            lines[
+              lines.length - 1
+            ] = `${window.startX},${window.startY},${radius}`;
+            textarea.value = lines.join("\n");
+            updateCurve();
+          }
         };
 
         const handleMouseUp = (event) => {
-          if (!window.isDragging) return;
+          if (
+            !window.isDragging &&
+            !window.draggingRadiusHandle &&
+            !window.draggingCenterPoint
+          )
+            return;
           visualArea.classList.remove("no-select");
+          visualArea.classList.remove("grabbing");
           window.isDragging = false;
+          window.draggingRadiusHandle = false;
+          window.draggingDiskIndex = -1;
+          window.draggingCenterPoint = false;
+          window.draggingCenterIndex = -1;
           updateCurve();
         };
 
@@ -619,7 +817,12 @@
         visualArea.addEventListener("mouseup", handleMouseUp);
         visualArea.addEventListener("mouseleave", () => {
           visualArea.classList.remove("no-select");
+          visualArea.classList.remove("grabbing");
           window.isDragging = false;
+          window.draggingRadiusHandle = false;
+          window.draggingDiskIndex = -1;
+          window.draggingCenterPoint = false;
+          window.draggingCenterIndex = -1;
           updateCurve();
         });
 

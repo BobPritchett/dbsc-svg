@@ -682,11 +682,17 @@ class DiskBSpline {
     }
 
     // Then draw the control disks
-    this.controlDisks.forEach((disk) => {
+    this.controlDisks.forEach((disk, index) => {
       // Disk outline
       circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${disk.radius}" fill="none" stroke="${opts.lineColor}" stroke-dasharray="1,1" stroke-width="1" stroke-linecap="rounded" />`;
-      // Center point
-      circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${opts.dotSize}" fill="${opts.centerColor}" />`;
+      // Center point with data attributes
+      circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${opts.dotSize}" fill="${opts.centerColor}" data-index="${index}" data-type="center" />`;
+      // Radius handle at 0 degrees with data attributes
+      circles += `<circle cx="${disk.center.x + disk.radius}" cy="${
+        disk.center.y
+      }" r="${
+        opts.dotSize / 2
+      }" fill="blue" data-index="${index}" data-type="radius" />`;
       // Radius label
       circles += `<text x="${disk.center.x + 5}" y="${
         disk.center.y - 5
