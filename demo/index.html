@@ -244,13 +244,7 @@
         example3: {
           title: "Calligraphic Stroke",
           fillColor: "black",
-          data: `162,177,1
-90,78,6
-156,43,4
-162,116,0
-180,50,4
-238,92,6
-164,190,01`,
+          data: "162,177,1\n90,78,6\n156,43,4\n162,116,0\n180,50,4\n238,92,6\n164,190,1",
         },
         example4: {
           title: "Calligraphic Effect",
@@ -265,18 +259,12 @@
         example6: {
           title: "Closed Circle",
           fillColor: "black",
-          data: "200,100,20\n300,100,20\n300,200,20\n200,200,20\nz",
+          data: "80,60,20\n180,60,1\n180,160,20\n80,160,1\nz",
         },
         example7: {
           title: "Closed Heart",
           fillColor: "black",
-          data: `162,177,1
-90,78,6
-156,43,4
-162,116,0
-180,50,4
-238,92,6
-z`,
+          data: "162,177,1\n90,78,6\n156,43,4\n162,116,0\n180,50,4\n238,92,6\nz",
         },
       };
 
@@ -308,8 +296,8 @@ z`,
       // Helper function to create SVG content
       function createSVG(width, height, content) {
         return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-          ${content}
-        </svg>`;
+                ${content}
+              </svg>`;
       }
 
       // Parse text data into control disks
@@ -365,6 +353,10 @@ z`,
         const errorDiv = document.getElementById("errorMessage");
         const visualDiv = document.getElementById("visualArea");
         const currentExample = document.getElementById("exampleSelect").value;
+        const logDiv = document.getElementById("log");
+
+        // Clear the log div
+        logDiv.innerHTML = "";
 
         // Parse the control disks
         const { controlDisks, hasError, isClosed } = parseControlDisks(
@@ -407,8 +399,8 @@ z`,
                 )
               )
             );
-            svgContent += `<circle cx="${window.startX}" cy="${window.startY}" r="${radius}" 
-              fill="none" stroke="gray" stroke-width="1" stroke-dasharray="4,4" />`;
+            svgContent += `<circle cx="${window.startX}" cy="${window.startY}" r="${radius}"
+                    fill="none" stroke="gray" stroke-width="1" stroke-dasharray="4,4" />`;
           }
         } else {
           if (hasError) {
@@ -445,35 +437,43 @@ z`,
               const disk = result.disks[i];
               const normal = result.normals[i];
 
-              normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
-                                 x2="${disk.center.x + normal.x * disk.radius}" 
-                                 y2="${disk.center.y + normal.y * disk.radius}" 
-                                 stroke="${
-                                   visualOptions.normals.positiveColor
-                                 }" 
-                                 stroke-width="${
-                                   visualOptions.normals.width
-                                 }" />`;
+              normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}"
+                                       x2="${
+                                         disk.center.x + normal.x * disk.radius
+                                       }"
+                                       y2="${
+                                         disk.center.y + normal.y * disk.radius
+                                       }"
+                                       stroke="${
+                                         visualOptions.normals.positiveColor
+                                       }"
+                                       stroke-width="${
+                                         visualOptions.normals.width
+                                       }" />`;
 
-              normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}" 
-                                 x2="${disk.center.x - normal.x * disk.radius}" 
-                                 y2="${disk.center.y - normal.y * disk.radius}" 
-                                 stroke="${
-                                   visualOptions.normals.negativeColor
-                                 }" 
-                                 stroke-width="${
-                                   visualOptions.normals.width
-                                 }" />`;
+              normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}"
+                                       x2="${
+                                         disk.center.x - normal.x * disk.radius
+                                       }"
+                                       y2="${
+                                         disk.center.y - normal.y * disk.radius
+                                       }"
+                                       stroke="${
+                                         visualOptions.normals.negativeColor
+                                       }"
+                                       stroke-width="${
+                                         visualOptions.normals.width
+                                       }" />`;
             }
           }
 
           // Create the skeleton path element if enabled
           const skeletonPathElement = showSkeleton
-            ? `<path d="${result.skeletonPath}" 
-                fill="none" 
-                stroke="${visualOptions.skeleton.color}" 
-                stroke-width="${visualOptions.skeleton.width}" 
-                class="skeleton-path" />`
+            ? `<path d="${result.skeletonPath}"
+                      fill="none"
+                      stroke="${visualOptions.skeleton.color}"
+                      stroke-width="${visualOptions.skeleton.width}"
+                      class="skeleton-path" />`
             : "";
 
           // Choose appropriate fill color and opacity based on diagnostics
@@ -485,11 +485,11 @@ z`,
             : 1;
 
           svgContent = `
-            <path d="${result.fillPath}" fill="${fillColor}" opacity="${opacity}" stroke="none" />
-            ${skeletonPathElement}
-            ${controlCircles}
-            ${normalLines}
-          `;
+                  <path d="${result.fillPath}" fill="${fillColor}" opacity="${opacity}" stroke="none" />
+                  ${skeletonPathElement}
+                  ${controlCircles}
+                  ${normalLines}
+                `;
         }
 
         // Create SVG

@@ -105,11 +105,9 @@ class DiskBSpline {
 
     if (this.closed) {
       // For closed shapes, create a periodic knot vector
-      const numKnots = n + k + 2; // One more than usual for closed shapes
-
-      // Generate uniform knots from 0 to n-k+1
+      const numKnots = this.controlDisks.length + k + 1;
       for (let i = 0; i < numKnots; i++) {
-        this.knots.push(i);
+        this.knots.push(i - k);
       }
     } else {
       // Original open shape logic
@@ -172,6 +170,35 @@ class DiskBSpline {
   }
 
   /**
+   * Calculate the derivative of the B-spline basis function
+   * @param {number} i - Index of the basis function
+   * @param {number} k - Degree of the basis function
+   * @param {number} u - Parameter value
+   * @returns {number} - Value of the derivative of the basis function
+   */
+  basisFunctionDerivative(i, k, u) {
+    if (k === 0) return 0;
+
+    // Calculate the first term coefficient
+    let coeff1 = 0;
+    if (this.knots[i + k] - this.knots[i] !== 0) {
+      coeff1 = k / (this.knots[i + k] - this.knots[i]);
+    }
+
+    // Calculate the second term coefficient
+    let coeff2 = 0;
+    if (this.knots[i + k + 1] - this.knots[i + 1] !== 0) {
+      coeff2 = k / (this.knots[i + k + 1] - this.knots[i + 1]);
+    }
+
+    // Use the derivative formula for B-spline basis functions
+    return (
+      coeff1 * this.basisFunction(i, k - 1, u) -
+      coeff2 * this.basisFunction(i + 1, k - 1, u)
+    );
+  }
+
+  /**
    * Evaluate the B-spline at parameter u
    * @param {number} u - Parameter value
    * @returns {Object} - Disk at parameter u with center (x,y) and radius
@@ -188,13 +215,8 @@ class DiskBSpline {
 
     // Handle parameter wrapping for closed shapes or endpoint for open shapes
     if (this.closed) {
-      const knotSpan = this.knots[n + 1] - this.knots[this.degree];
-      while (u > this.knots[n + 1]) {
-        u -= knotSpan;
-      }
-      while (u < this.knots[this.degree]) {
-        u += knotSpan;
-      }
+      const period = this.knots[n + 1] - this.knots[this.degree];
+      u = this.knots[this.degree] + ((u - this.knots[this.degree]) % period);
     } else {
       // For open shapes, handle endpoint exactly
       const originalU = u;
@@ -237,45 +259,196 @@ class DiskBSpline {
   }
 
   /**
-   * Generate a sequence of disks along the B-spline
-   * @param {number} numSamples - Number of sample points
+   * Evaluate the derivative of the B-spline at parameter u
+   * @param {number} u - Parameter value
+   * @returns {Object} - Derivative vector {x, y} and radius change rate
+   */
+  evaluateDerivativeAt(u) {
+    if (this.controlDisks.length < this.degree + 1) {
+      return { x: 0, y: 0, radiusRate: 0 };
+    }
+
+    const n = this.controlDisks.length - 1;
+
+    // Handle parameter wrapping/clamping
+    if (this.closed) {
+      const period = this.knots[n + 1] - this.knots[this.degree];
+      u = this.knots[this.degree] + ((u - this.knots[this.degree]) % period);
+    } else {
+      // For open curves, special handling of endpoints
+      if (u >= this.knots[n + 1]) {
+        // At the end point, use the direction from the second-to-last to last control point
+        const last = this.controlDisks[n];
+        const secondToLast = this.controlDisks[n - 1];
+        const dx = last.center.x - secondToLast.center.x;
+        const dy = last.center.y - secondToLast.center.y;
+        const dr = last.radius - secondToLast.radius;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        if (length > 0.0001) {
+          return {
+            x: dx / length,
+            y: dy / length,
+            radiusRate: dr / length,
+          };
+        }
+      } else if (u <= this.knots[this.degree]) {
+        // At the start point, use the direction from first to second control point
+        const first = this.controlDisks[0];
+        const second = this.controlDisks[1];
+        const dx = second.center.x - first.center.x;
+        const dy = second.center.y - first.center.y;
+        const dr = second.radius - first.radius;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        if (length > 0.0001) {
+          return {
+            x: dx / length,
+            y: dy / length,
+            radiusRate: dr / length,
+          };
+        }
+      }
+      // Clamp parameter to valid range
+      u = Math.max(this.knots[this.degree], Math.min(u, this.knots[n + 1]));
+    }
+
+    let dx = 0,
+      dy = 0,
+      dr = 0;
+    let totalDerivative = 0;
+
+    // Calculate the derivative using the chain rule
+    for (let i = 0; i <= n; i++) {
+      const derivative = this.basisFunctionDerivative(i, this.degree, u);
+      totalDerivative += derivative;
+      dx += derivative * this.controlDisks[i].center.x;
+      dy += derivative * this.controlDisks[i].center.y;
+      dr += derivative * this.controlDisks[i].radius;
+    }
+
+    // Log if derivatives don't sum to 0 (within floating point error)
+    if (Math.abs(totalDerivative) > 0.0001) {
+      this.logMessage(
+        `WARNING: Basis function derivatives sum to ${totalDerivative} at u=${u}, should be 0`
+      );
+    }
+
+    return { x: dx, y: dy, radiusRate: dr };
+  }
+
+  /**
+   * Calculate curvature at a point using derivatives
+   * @param {number} u - Parameter value
+   * @returns {number} - Curvature at the point
+   */
+  calculateCurvatureAt(u) {
+    const d1 = this.evaluateDerivativeAt(u);
+
+    // Calculate second derivative using finite differences
+    const epsilon = 0.0001;
+    const d2 = this.evaluateDerivativeAt(u + epsilon);
+
+    const dx = d1.x;
+    const dy = d1.y;
+    const ddx = (d2.x - d1.x) / epsilon;
+    const ddy = (d2.y - d1.y) / epsilon;
+
+    // Curvature formula: |x'y'' - y'x''| / (x'^2 + y'^2)^(3/2)
+    const numerator = Math.abs(dx * ddy - dy * ddx);
+    const denominator = Math.pow(dx * dx + dy * dy, 1.5);
+
+    return denominator > 0.0001 ? numerator / denominator : 0;
+  }
+
+  /**
+   * Generate a sequence of disks along the B-spline with adaptive sampling
+   * @param {number} baseNumSamples - Base number of sample points
+   * @param {number} maxNumSamples - Maximum number of sample points
    * @returns {Array} - Array of disks along the curve
    */
-  sampleCurve(numSamples) {
+  sampleCurveAdaptive(baseNumSamples = 50, maxNumSamples = 200) {
     if (this.controlDisks.length < this.degree + 1) {
       this.logMessage(
         `ERROR: Not enough control points for the specified degree. Need at least ${
           this.degree + 1
         } points for degree ${this.degree}.`
       );
-      // Return some default disks with zero radius to avoid errors
-      const defaultDisks = [];
-      for (let i = 0; i < 2; i++) {
-        defaultDisks.push({
-          center: { x: 100 + i * 100, y: 100 },
-          radius: 0,
-        });
-      }
-      return defaultDisks;
+      return [];
     }
 
     const result = [];
     const n = this.controlDisks.length - 1;
     const startU = this.knots[this.degree];
-    const endU = this.closed
-      ? this.knots[n + 1] // For closed shapes, go up to the second-to-last knot
-      : this.knots[n + 1]; // For open shapes, use the last knot
+    const endU = this.closed ? this.knots[n + 1] : this.knots[n + 1];
 
-    this.logMessage(
-      `Sampling curve from u=${startU} to u=${endU} with ${numSamples} samples`
+    // First pass: sample uniformly and calculate curvatures
+    const uniformSamples = [];
+    const curvatures = [];
+    let maxCurvature = 0;
+
+    // Increase base sampling for complex curves
+    const effectiveBaseSamples = Math.max(
+      baseNumSamples,
+      Math.min(200, Math.round(this.controlDisks.length * 20))
     );
 
-    for (let i = 0; i < numSamples; i++) {
-      const u = startU + (i / (numSamples - 1)) * (endU - startU);
-      result.push(this.evaluateAt(u));
+    for (let i = 0; i < effectiveBaseSamples; i++) {
+      const u = startU + (i / (effectiveBaseSamples - 1)) * (endU - startU);
+      const disk = this.evaluateAt(u);
+      const curvature = this.calculateCurvatureAt(u);
+
+      uniformSamples.push({ u, disk });
+      curvatures.push(curvature);
+      maxCurvature = Math.max(maxCurvature, curvature);
     }
 
-    return result;
+    // Second pass: add additional samples based on curvature
+    const adaptiveSamples = [];
+    const curvatureThreshold = 0.15; // Lower threshold to catch more turns
+    const maxExtraSamples = 4; // Allow more samples between points
+    const minSegmentLength = 0.5; // Minimum length between samples to prevent over-sampling
+
+    for (let i = 0; i < uniformSamples.length - 1; i++) {
+      adaptiveSamples.push(uniformSamples[i]);
+
+      const normalizedCurvature =
+        maxCurvature > 0 ? curvatures[i] / maxCurvature : 0;
+
+      // Calculate segment length
+      const dx =
+        uniformSamples[i + 1].disk.center.x - uniformSamples[i].disk.center.x;
+      const dy =
+        uniformSamples[i + 1].disk.center.y - uniformSamples[i].disk.center.y;
+      const segmentLength = Math.sqrt(dx * dx + dy * dy);
+
+      if (
+        normalizedCurvature > curvatureThreshold &&
+        adaptiveSamples.length < maxNumSamples &&
+        segmentLength > minSegmentLength
+      ) {
+        // Calculate number of extra samples based on both curvature and segment length
+        const numExtraSamples = Math.min(
+          maxExtraSamples,
+          Math.floor(
+            normalizedCurvature * maxExtraSamples * (segmentLength / 10)
+          )
+        );
+
+        const u1 = uniformSamples[i].u;
+        const u2 = uniformSamples[i + 1].u;
+
+        for (let j = 1; j <= numExtraSamples; j++) {
+          const u = u1 + (j / (numExtraSamples + 1)) * (u2 - u1);
+          adaptiveSamples.push({ u, disk: this.evaluateAt(u) });
+        }
+      }
+    }
+    adaptiveSamples.push(uniformSamples[uniformSamples.length - 1]);
+
+    this.logMessage(
+      `Adaptive sampling generated ${adaptiveSamples.length} points from base ${effectiveBaseSamples}`
+    );
+
+    return adaptiveSamples.map((sample) => sample.disk);
   }
 
   /**
@@ -304,13 +477,13 @@ class DiskBSpline {
   }
 
   /**
-   * Convert the B-spline to SVG path elements
-   * @param {number} numSamples - Number of sample points (if not provided, will be calculated based on path length)
-   * @param {Object} options - Additional options (unused currently)
+   * Convert the B-spline to SVG path elements with adaptive sampling
+   * @param {number} numSamples - Base number of sample points
+   * @param {Object} options - Additional options
    * @returns {Object} - SVG path data including fill path, skeleton path, disks, and normals
    */
   toSVGPath(numSamples = null, options = {}) {
-    // Calculate total path length if numSamples is not provided
+    // Calculate base number of samples if not provided
     if (numSamples === null) {
       let totalLength = 0;
       for (let i = 0; i < this.controlDisks.length - 1; i++) {
@@ -320,21 +493,11 @@ class DiskBSpline {
           this.controlDisks[i + 1].center.y - this.controlDisks[i].center.y;
         totalLength += Math.sqrt(dx * dx + dy * dy);
       }
-
-      // Use approximately 2 samples per pixel of path length, with a minimum of 50 samples
-      // and a maximum of 200 samples to ensure smooth curves while maintaining performance
-      numSamples = Math.min(200, Math.max(50, Math.round(totalLength * 2)));
-
-      if (this.debug) {
-        this.logMessage(
-          `Calculated ${numSamples} samples based on path length of ${Math.round(
-            totalLength
-          )} pixels`
-        );
-      }
+      numSamples = Math.min(100, Math.max(50, Math.round(totalLength)));
     }
 
-    const disks = this.sampleCurve(numSamples);
+    // Use adaptive sampling instead of uniform sampling
+    const disks = this.sampleCurveAdaptive(numSamples, numSamples * 2);
 
     if (disks.length < 2) {
       this.logMessage(`ERROR: Not enough sample points to create a path`);
@@ -346,54 +509,38 @@ class DiskBSpline {
       };
     }
 
-    // Calculate the centerline of the curve (skeleton path)
+    // Calculate the centerline and normals using exact derivatives
     const centerPoints = disks.map((disk) => disk.center);
     const skeletonPath = this.createSmoothPath(centerPoints);
-
-    // We need to calculate the normals to the curve at each point
     const normals = [];
 
-    // First, calculate tangent vectors (finite differences)
+    // Calculate valid parameter range
+    const n = this.controlDisks.length - 1;
+    const startU = this.knots[this.degree];
+    const endU = this.knots[n + 1];
+    const parameterStep = (endU - startU) / (disks.length - 1);
+
+    // Calculate normals using derivatives
     for (let i = 0; i < disks.length; i++) {
-      let tangentX, tangentY;
+      const u = startU + i * parameterStep;
+      const derivative = this.evaluateDerivativeAt(u);
+      const length = Math.sqrt(
+        derivative.x * derivative.x + derivative.y * derivative.y
+      );
 
-      if (this.closed) {
-        // For closed shapes, use circular indexing
-        const prev = (i - 1 + disks.length) % disks.length;
-        const next = (i + 1) % disks.length;
-        tangentX = disks[next].center.x - disks[prev].center.x;
-        tangentY = disks[next].center.y - disks[prev].center.y;
+      if (length > 0.0001) {
+        normals.push({
+          x: -derivative.y / length,
+          y: derivative.x / length,
+        });
       } else {
-        // Original open shape logic
-        if (i === 0) {
-          tangentX = disks[1].center.x - disks[0].center.x;
-          tangentY = disks[1].center.y - disks[0].center.y;
-        } else if (i === disks.length - 1) {
-          tangentX = disks[i].center.x - disks[i - 1].center.x;
-          tangentY = disks[i].center.y - disks[i - 1].center.y;
-        } else {
-          tangentX = disks[i + 1].center.x - disks[i - 1].center.x;
-          tangentY = disks[i + 1].center.y - disks[i - 1].center.y;
-        }
+        // Fall back to previous normal or default if no previous
+        const prevNormal = i > 0 ? normals[i - 1] : { x: 1, y: 0 };
+        normals.push(prevNormal);
+        this.logMessage(
+          `WARNING: Zero-length derivative at point ${i}, using fallback normal`
+        );
       }
-
-      // Normalize the tangent vector
-      const length = Math.sqrt(tangentX * tangentX + tangentY * tangentY);
-      if (length > 0) {
-        tangentX /= length;
-        tangentY /= length;
-      } else {
-        // Default to horizontal if we can't compute
-        tangentX = 1;
-        tangentY = 0;
-        this.logMessage(`WARNING: Zero-length tangent at point ${i}`);
-      }
-
-      // Normal is perpendicular to tangent (rotated 90 degrees)
-      normals.push({
-        x: -tangentY,
-        y: tangentX,
-      });
     }
 
     // Generate the outline points using the normals
@@ -436,11 +583,9 @@ class DiskBSpline {
       pathData = `M ${upperFirstPoint.x} ${upperFirstPoint.y}`;
 
       // Add semicircle for start cap
-      // We'll draw a 180-degree arc from the upper point to the lower point
       const lowerFirstPoint = lowerPoints[0];
 
-      // Flip the sweep flag for the start cap to ensure correct orientation
-      // For the start cap, we need to consider the direction of the path
+      // Determine sweep flag based on tangent direction
       const sweepFlag =
         firstTangent.x * (upperFirstPoint.y - lowerFirstPoint.y) -
           firstTangent.y * (upperFirstPoint.x - lowerFirstPoint.x) >
@@ -463,13 +608,10 @@ class DiskBSpline {
     if (!this.closed) {
       if (lastDisk.radius > 0) {
         // Add semicircle for end cap
-        // We'll draw a 180-degree arc from the lower point to the upper point
         const lowerLastPoint = lowerPoints[lowerPoints.length - 1];
         const upperLastPoint = upperPoints[upperPoints.length - 1];
 
-        // Determine the arc direction - we want the arc to curve away from the path
-        // Use the tangent direction to determine sweep flag
-        // We need to ensure we're drawing the outer arc, not the inner arc
+        // Determine sweep flag based on tangent direction
         const sweepFlag =
           lastTangent.x * (lowerLastPoint.y - upperLastPoint.y) -
             lastTangent.y * (lowerLastPoint.x - upperLastPoint.x) >
