@@ -184,6 +184,8 @@
             <option value="example3">Calligraphic Stroke</option>
             <option value="example4">Calligraphic Effect</option>
             <option value="example5">Interactive Curve</option>
+            <option value="example6">Closed Circle</option>
+            <option value="example7">Closed Heart</option>
           </select>
           <button id="addPointButton">Add Point</button>
           <button id="resetButton">Reset</button>
@@ -192,7 +194,8 @@
         <div class="example-content">
           <div class="data-column">
             <div class="instructions">
-              Edit points below. Each line should be in the format x,y,radius
+              Edit points below. Each line should be in the format x,y,radius.
+              Add 'z' as the last line to create a closed shape.
             </div>
             <textarea id="pointsData"></textarea>
             <div id="errorMessage" class="error-message"></div>
@@ -259,6 +262,22 @@
           fillColor: "black",
           data: "50,100,10\n150,50,15\n250,50,20\n350,100,10",
         },
+        example6: {
+          title: "Closed Circle",
+          fillColor: "black",
+          data: "200,100,20\n300,100,20\n300,200,20\n200,200,20\nz",
+        },
+        example7: {
+          title: "Closed Heart",
+          fillColor: "black",
+          data: `162,177,1
+90,78,6
+156,43,4
+162,116,0
+180,50,4
+238,92,6
+z`,
+        },
       };
 
       // Define visual styling options
@@ -298,9 +317,16 @@
         const lines = text.trim().split("\n");
         const controlDisks = [];
         let hasError = false;
+        let isClosed = false;
 
         for (const line of lines) {
-          const parts = line.trim().split(",");
+          const trimmedLine = line.trim();
+          if (trimmedLine.toLowerCase() === "z") {
+            isClosed = true;
+            continue;
+          }
+
+          const parts = trimmedLine.split(",");
           if (parts.length !== 3) {
             hasError = true;
             continue;
@@ -321,7 +347,7 @@
           });
         }
 
-        return { controlDisks, hasError };
+        return { controlDisks, hasError, isClosed };
       }
 
       // Function to check if any diagnostics are enabled
@@ -341,7 +367,9 @@
         const currentExample = document.getElementById("exampleSelect").value;
 
         // Parse the control disks
-        const { controlDisks, hasError } = parseControlDisks(textarea.value);
+        const { controlDisks, hasError, isClosed } = parseControlDisks(
+          textarea.value
+        );
 
         // Get toggle states
         const showSkeleton =
@@ -385,7 +413,7 @@
         } else {
           if (hasError) {
             errorDiv.textContent =
-              "Some lines failed to parse. Format should be x,y,radius (one per line).";
+              "Some lines failed to parse. Format should be x,y,radius (one per line). Use 'z' to close the shape.";
           } else {
             errorDiv.textContent = "";
           }
@@ -394,6 +422,7 @@
           const bspline = new DiskBSpline(controlDisks, {
             degree: 3,
             debug: document.getElementById("showDebugToggle")?.checked || false,
+            closed: isClosed,
           });
 
           // Generate paths

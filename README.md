@@ -37,7 +37,20 @@ const diskBSpline = new DiskBSpline(controlDisks);
 const diskBSpline = new DiskBSpline(controlDisks, {
   degree: 3, // Degree of the B-spline (default: 3)
   debug: true, // Enable debug logging (default: false)
+  closed: false, // Whether the shape should be closed (default: false)
 });
+
+// For closed shapes, set the closed option to true
+const closedControlDisks = [
+  { center: { x: 200, y: 100 }, radius: 20 },
+  { center: { x: 300, y: 100 }, radius: 20 },
+  { center: { x: 300, y: 200 }, radius: 20 },
+  { center: { x: 200, y: 200 }, radius: 20 },
+];
+const closedBSpline = new DiskBSpline(closedControlDisks, { closed: true });
+
+// Note: The 'z' notation is only used in the text input format,
+// not in the JavaScript API
 ```
 
 ### Debug Logging
@@ -98,6 +111,7 @@ Refer to the `index.html` file for more detailed examples of how to use the `Dis
 - **Interactive Example**: Click to add control disks and visualize the resulting curve
 - **Debug Logging**: Real-time feedback and diagnostic information
 - **Pure JavaScript Implementation**: No external dependencies required
+- **Closed Shape Support**: Create closed shapes with smooth transitions by adding 'z' as the last control point
 
 ## Mathematics Background
 
@@ -138,6 +152,8 @@ This implementation leverages computational geometry to extend traditional B-Spl
 3. **Calligraphic Stroke**: Mimics the effect of a calligraphic pen
 4. **Calligraphic Effect**: Dramatic width variation for artistic effects
 5. **Interactive Curve**: Create your own curves by adding control disks
+6. **Closed Circle**: Demonstrates smooth closed shape with uniform width
+7. **Closed Heart**: Shows artistic closed shape with varying width
 
 ## Implementation Notes
 
@@ -146,6 +162,8 @@ This implementation leverages computational geometry to extend traditional B-Spl
 - Approximates normals using finite differences
 - Creates path outlines by offsetting along normal vectors
 - Handles edge cases such as zero-length tangents and endpoint conditions
+- Supports closed shapes with proper C2 continuity at closure points
+- Uses periodic knot vectors for closed shapes to ensure smooth transitions
 
 ## AI Generation Notice
 

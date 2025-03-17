@@ -9,11 +9,23 @@ class DiskBSpline {
    * @param {Object} options - Options object
    * @param {number} options.degree - Degree of the B-spline (default: 3)
    * @param {boolean} options.debug - Whether to enable debug logging (default: false)
+   * @param {boolean} options.closed - Whether the shape should be closed (default: false)
    */
   constructor(controlDisks = [], options = {}) {
-    this.controlDisks = controlDisks;
     this.degree = options.degree ?? 3;
     this.debug = options.debug ?? false;
+    this.closed = options.closed ?? false;
+
+    // For closed shapes, wrap the first degree control points at the end
+    if (this.closed && controlDisks.length > this.degree) {
+      this.controlDisks = [...controlDisks];
+      for (let i = 0; i < this.degree; i++) {
+        this.controlDisks.push(controlDisks[i]);
+      }
+    } else {
+      this.controlDisks = controlDisks;
+    }
+
     this.knots = [];
     this.generateUniformKnots();
 
@@ -33,6 +45,12 @@ class DiskBSpline {
             controlDisks[controlDisks.length - 1].radius
           }`
         );
+        this.logMessage(`Shape is ${this.closed ? "closed" : "open"}`);
+        if (this.closed) {
+          this.logMessage(
+            `Wrapped ${this.degree} control points for closed shape`
+          );
+        }
       }
     }
   }
@@ -85,14 +103,29 @@ class DiskBSpline {
 
     this.knots = [];
 
-    for (let i = 0; i <= n + k + 1; i++) {
-      if (i < k + 1) {
-        this.knots.push(0);
-      } else if (i > n) {
-        this.knots.push(n - k + 1);
-      } else {
-        this.knots.push(i - k);
+    if (this.closed) {
+      // For closed shapes, create a periodic knot vector
+      const numKnots = n + k + 2; // One more than usual for closed shapes
+
+      // Generate uniform knots from 0 to n-k+1
+      for (let i = 0; i < numKnots; i++) {
+        this.knots.push(i);
       }
+    } else {
+      // Original open shape logic
+      for (let i = 0; i <= n + k + 1; i++) {
+        if (i < k + 1) {
+          this.knots.push(0);
+        } else if (i > n) {
+          this.knots.push(n - k + 1);
+        } else {
+          this.knots.push(i - k);
+        }
+      }
+    }
+
+    if (this.debug) {
+      this.logMessage(`Generated knot vector: [${this.knots.join(", ")}]`);
     }
   }
 
@@ -104,19 +137,14 @@ class DiskBSpline {
    * @returns {number} - Value of the basis function
    */
   basisFunction(i, k, u) {
-    // Handle the endpoint case
-    if (
-      i === this.knots.length - k - 2 &&
-      u === this.knots[this.knots.length - 1]
-    ) {
-      // At the last point, return 1 for the last basis function
-      return 1;
-    }
-
     // Base case for recursion
     if (k === 0) {
-      // Handle the case where u is exactly at the right endpoint of its interval
-      if (u === this.knots[i + 1] && u === this.knots[this.knots.length - 1]) {
+      // Special case for the endpoint in open shapes
+      if (
+        !this.closed &&
+        u === this.knots[this.knots.length - 1] &&
+        i === this.knots.length - k - 2
+      ) {
         return 1;
       }
       return u >= this.knots[i] && u < this.knots[i + 1] ? 1 : 0;
@@ -158,12 +186,27 @@ class DiskBSpline {
 
     const n = this.controlDisks.length - 1;
 
-    // Clamp u to valid range
-    const originalU = u;
-    u = Math.max(this.knots[this.degree], Math.min(u, this.knots[n + 1]));
+    // Handle parameter wrapping for closed shapes or endpoint for open shapes
+    if (this.closed) {
+      const knotSpan = this.knots[n + 1] - this.knots[this.degree];
+      while (u > this.knots[n + 1]) {
+        u -= knotSpan;
+      }
+      while (u < this.knots[this.degree]) {
+        u += knotSpan;
+      }
+    } else {
+      // For open shapes, handle endpoint exactly
+      const originalU = u;
+      if (u >= this.knots[n + 1]) {
+        // At the endpoint, return the last control point
+        return this.controlDisks[n];
+      }
+      u = Math.max(this.knots[this.degree], Math.min(u, this.knots[n + 1]));
 
-    if (originalU !== u) {
-      this.logMessage(`Parameter u=${originalU} clamped to u=${u}`);
+      if (originalU !== u) {
+        this.logMessage(`Parameter u=${originalU} clamped to u=${u}`);
+      }
     }
 
     let centerX = 0;
@@ -219,7 +262,9 @@ class DiskBSpline {
     const result = [];
     const n = this.controlDisks.length - 1;
     const startU = this.knots[this.degree];
-    const endU = this.knots[n + 1];
+    const endU = this.closed
+      ? this.knots[n + 1] // For closed shapes, go up to the second-to-last knot
+      : this.knots[n + 1]; // For open shapes, use the last knot
 
     this.logMessage(
       `Sampling curve from u=${startU} to u=${endU} with ${numSamples} samples`
@@ -312,18 +357,24 @@ class DiskBSpline {
     for (let i = 0; i < disks.length; i++) {
       let tangentX, tangentY;
 
-      if (i === 0) {
-        // Forward difference for first point
-        tangentX = disks[1].center.x - disks[0].center.x;
-        tangentY = disks[1].center.y - disks[0].center.y;
-      } else if (i === disks.length - 1) {
-        // Backward difference for last point
-        tangentX = disks[i].center.x - disks[i - 1].center.x;
-        tangentY = disks[i].center.y - disks[i - 1].center.y;
+      if (this.closed) {
+        // For closed shapes, use circular indexing
+        const prev = (i - 1 + disks.length) % disks.length;
+        const next = (i + 1) % disks.length;
+        tangentX = disks[next].center.x - disks[prev].center.x;
+        tangentY = disks[next].center.y - disks[prev].center.y;
       } else {
-        // Central difference for interior points
-        tangentX = disks[i + 1].center.x - disks[i - 1].center.x;
-        tangentY = disks[i + 1].center.y - disks[i - 1].center.y;
+        // Original open shape logic
+        if (i === 0) {
+          tangentX = disks[1].center.x - disks[0].center.x;
+          tangentY = disks[1].center.y - disks[0].center.y;
+        } else if (i === disks.length - 1) {
+          tangentX = disks[i].center.x - disks[i - 1].center.x;
+          tangentY = disks[i].center.y - disks[i - 1].center.y;
+        } else {
+          tangentX = disks[i + 1].center.x - disks[i - 1].center.x;
+          tangentY = disks[i + 1].center.y - disks[i - 1].center.y;
+        }
       }
 
       // Normalize the tangent vector
@@ -408,33 +459,35 @@ class DiskBSpline {
       pathData += ` L ${lowerPoints[i].x} ${lowerPoints[i].y}`;
     }
 
-    // End point - add rounded cap if radius > 0
-    if (lastDisk.radius > 0) {
-      // Add semicircle for end cap
-      // We'll draw a 180-degree arc from the lower point to the upper point
-      const lowerLastPoint = lowerPoints[lowerPoints.length - 1];
-      const upperLastPoint = upperPoints[upperPoints.length - 1];
+    // End point - add rounded cap if radius > 0 and shape is not closed
+    if (!this.closed) {
+      if (lastDisk.radius > 0) {
+        // Add semicircle for end cap
+        // We'll draw a 180-degree arc from the lower point to the upper point
+        const lowerLastPoint = lowerPoints[lowerPoints.length - 1];
+        const upperLastPoint = upperPoints[upperPoints.length - 1];
 
-      // Determine the arc direction - we want the arc to curve away from the path
-      // Use the tangent direction to determine sweep flag
-      // We need to ensure we're drawing the outer arc, not the inner arc
-      const sweepFlag =
-        lastTangent.x * (lowerLastPoint.y - upperLastPoint.y) -
-          lastTangent.y * (lowerLastPoint.x - upperLastPoint.x) >
-        0
-          ? 0
-          : 1;
+        // Determine the arc direction - we want the arc to curve away from the path
+        // Use the tangent direction to determine sweep flag
+        // We need to ensure we're drawing the outer arc, not the inner arc
+        const sweepFlag =
+          lastTangent.x * (lowerLastPoint.y - upperLastPoint.y) -
+            lastTangent.y * (lowerLastPoint.x - upperLastPoint.x) >
+          0
+            ? 0
+            : 1;
 
-      pathData += ` A ${lastDisk.radius} ${lastDisk.radius} 0 0 ${sweepFlag} ${upperLastPoint.x} ${upperLastPoint.y}`;
-    } else {
-      // For zero radius, just connect the points directly
-      pathData += ` L ${upperPoints[upperPoints.length - 1].x} ${
-        upperPoints[upperPoints.length - 1].y
-      }`;
+        pathData += ` A ${lastDisk.radius} ${lastDisk.radius} 0 0 ${sweepFlag} ${upperLastPoint.x} ${upperLastPoint.y}`;
+      } else {
+        // For zero radius, just connect the points directly
+        pathData += ` L ${upperPoints[upperPoints.length - 1].x} ${
+          upperPoints[upperPoints.length - 1].y
+        }`;
+      }
     }
 
     // Draw the upper edge from end to start
-    for (let i = upperPoints.length - 2; i >= 1; i--) {
+    for (let i = upperPoints.length - 2; i >= 0; i--) {
       pathData += ` L ${upperPoints[i].x} ${upperPoints[i].y}`;
     }
 
