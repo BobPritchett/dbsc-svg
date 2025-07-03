@@ -1,20 +1,24 @@
-# Disk B-Spline Curves / Variable Width Strokes in SVG
+# Disk B-Spline Curves: Variable-Width Strokes for SVG Vector Graphics
 
-![Open Curve Demo Screenshot](assets/dbsc-example.png)
-![Closed Curve Demo Screenshot](assets/dbsc-example-closed.png)
+![Open Curve Demo Screenshot](assets/dbsc-example.png "Interactive SVG demo showcasing a variable-width stroke created with Disk B-Spline Curves")
+![Closed Curve Demo Screenshot](assets/dbsc-example-closed.png "Closed SVG shape with smooth, variable-width strokes using Disk B-Spline Curves")
 
-This repository contains an interactive test harness for visualizing and experimenting with Disk B-Spline Curves, a powerful technique for generating variable-width strokes.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-- [Disk B-Spline Curves Demo](https://bobpritchett.github.io/dbsc-svg/demo)
+This open-source JavaScript library enables developers and designers to create smooth, variable-width strokes in SVG using Disk B-Spline Curves (DBSC), ideal for vector graphics, calligraphy, and animation.
+
+- [Interactive Disk B-Spline Curves Demo](https://bobpritchett.github.io/dbsc-svg/demo) - Try creating variable-width SVG strokes in real-time
 
 ## Overview
 
 Disk B-Spline Curves are a mathematical tool for generating smooth variable-width curves from a sequence of control disks. Each control disk consists of a center point and a radius, and the interpolation between these disks creates paths with continuously varying width. The implementation is particularly useful for:
 
 - Drawing calligraphic strokes
+- Brushstroke effects
 - Creating natural-looking organic shapes
 - Rendering smooth variable-width paths
 - Designing vector graphics with aesthetic appeal
+- Rendering organic, natural-looking shapes in SVG
 
 ## Using the DiskBSpline Class
 
@@ -50,8 +54,8 @@ const closedControlDisks = [
 ];
 const closedBSpline = new DiskBSpline(closedControlDisks, { closed: true });
 
-// Note: The 'z' notation is only used in the text input format,
-// not in the JavaScript API
+// Note: The 'z' notation is only used in the test harness
+// text input format, not in the JavaScript API
 ```
 
 ### Debug Logging
@@ -189,3 +193,7 @@ I moved to Cursor where it was further refined. For optimization and some improv
 MIT License
 
 ## References
+
+## Keywords
+
+SVG, variable-width strokes, Disk B-Spline Curves, vector graphics, calligraphy, computational geometry, JavaScript, interactive curves, brushstroke animation, organic shapes
