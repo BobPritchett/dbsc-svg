@@ -167,20 +167,24 @@
 
     <div class="controls" style="margin-bottom: 20px">
       <label
-        ><input type="checkbox" id="showSkeletonToggle" checked /> Show Skeleton
+        ><input type="checkbox" id="showSkeletonToggle" checked /> Skeleton
         Path</label
       >
       <label style="margin-left: 20px"
-        ><input type="checkbox" id="showNormalsToggle" /> Show Normal
-        Vectors</label
+        ><input type="checkbox" id="showNormalsToggle" /> Normal Vectors</label
       >
       <label style="margin-left: 20px"
-        ><input type="checkbox" id="showControlDisksToggle" checked /> Show
-        Control Disks</label
+        ><input type="checkbox" id="showControlDisksToggle" checked /> Control
+        Disks</label
       >
       <label style="margin-left: 20px"
-        ><input type="checkbox" id="showDebugToggle" checked /> Show Debug
-        Log</label
+        ><input type="checkbox" id="showGridToggle" checked /> Grid</label
+      >
+      <label style="margin-left: 20px"
+        ><input type="checkbox" id="showPathPointsToggle" /> Path Points</label
+      >
+      <label style="margin-left: 20px"
+        ><input type="checkbox" id="showDebugToggle" checked /> Debug Log</label
       >
     </div>
 
@@ -199,6 +203,18 @@
           <button id="addPointButton">Add Point</button>
           <button id="resetButton">Reset</button>
           <button id="clearButton">Clear</button>
+          <button id="copyPathButton" title="Copy SVG path to clipboard">
+            Copy Path
+          </button>
+          <button id="copySvgButton" title="Copy SVG (shape only) to clipboard">
+            Copy SVG
+          </button>
+          <button
+            id="downloadSvgButton"
+            title="Download current SVG (shape only)"
+          >
+            Download SVG
+          </button>
         </div>
         <div class="example-content">
           <div class="data-column">
@@ -215,6 +231,7 @@
               radius.
             </div>
             <div id="visualArea"></div>
+            <div id="metrics" class="instructions"></div>
           </div>
         </div>
       </div>
@@ -286,25 +303,41 @@
         },
         skeleton: {
           color: "#0066cc",
-          width: 2,
+          width: 0.5,
         },
         normals: {
           positiveColor: "blue",
           negativeColor: "red",
-          width: 1.5,
+          width: 0.5,
         },
         controlDisks: {
           lineColor: "#666",
           centerColor: "#cc3300",
           textColor: "#333",
-          lineWidth: 1,
-          dotSize: 3,
+          lineWidth: 0.5,
+          dotSize: 2,
         },
       };
 
       // Helper function to create SVG content
       function createSVG(width, height, content) {
+        const showGrid = document.getElementById("showGridToggle")?.checked;
+        const gridDefs = showGrid
+          ? `
+    <defs>
+      <pattern id="smallGrid" width="10" height="10" patternUnits="userSpaceOnUse">
+        <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#e6e6e6" stroke-width="1" />
+      </pattern>
+      <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
+        <rect width="100" height="100" fill="url(#smallGrid)" />
+        <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#d0d0d0" stroke-width="1" />
+      </pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#grid)" />
+    `
+          : "";
         return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+                ${gridDefs}
                 ${content}
               </svg>`;
       }
@@ -374,6 +407,230 @@
         return { controlDisks, hasError, isClosed };
       }
 
+      // Parse an SVG path 'd' string and return anchor points (M/L/H/V/Z endpoints, and endpoints of C/S/Q/T/A).
+      // Control points for curves are ignored.
+      function parsePathAnchors(d) {
+        const anchors = [];
+        if (!d || typeof d !== "string") return anchors;
+
+        let i = 0;
+        const n = d.length;
+        let cmd = null;
+        let currX = 0;
+        let currY = 0;
+        let subpathStartX = 0;
+        let subpathStartY = 0;
+
+        const isCommand = (ch) => /[a-zA-Z]/.test(ch);
+        const skipSeparators = () => {
+          while (i < n) {
+            const ch = d[i];
+            if (ch === " " || ch === "\t" || ch === "\n" || ch === ",") {
+              i++;
+            } else {
+              break;
+            }
+          }
+        };
+        const readNumber = () => {
+          skipSeparators();
+          const m = d
+            .slice(i)
+            .match(/^[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/);
+          if (!m) return null;
+          i += m[0].length;
+          skipSeparators();
+          return parseFloat(m[0]);
+        };
+
+        while (i < n) {
+          skipSeparators();
+          if (i >= n) break;
+          const ch = d[i];
+          if (isCommand(ch)) {
+            cmd = ch;
+            i++;
+          } else if (cmd == null) {
+            // Invalid path data; bail
+            break;
+          }
+
+          const isRel = cmd === cmd.toLowerCase();
+          switch (cmd) {
+            case "M":
+            case "m": {
+              const x = readNumber();
+              const y = readNumber();
+              if (x == null || y == null) break;
+              const newX = isRel ? currX + x : x;
+              const newY = isRel ? currY + y : y;
+              currX = newX;
+              currY = newY;
+              subpathStartX = newX;
+              subpathStartY = newY;
+              anchors.push({ x: currX, y: currY });
+              // Subsequent pairs are implicit L/lineto
+              while (true) {
+                const nx = readNumber();
+                const ny = readNumber();
+                if (nx == null || ny == null) break;
+                const lx = isRel ? currX + nx : nx;
+                const ly = isRel ? currY + ny : ny;
+                currX = lx;
+                currY = ly;
+                anchors.push({ x: currX, y: currY });
+              }
+              break;
+            }
+            case "L":
+            case "l": {
+              while (true) {
+                const x = readNumber();
+                const y = readNumber();
+                if (x == null || y == null) break;
+                currX = isRel ? currX + x : x;
+                currY = isRel ? currY + y : y;
+                anchors.push({ x: currX, y: currY });
+              }
+              break;
+            }
+            case "H":
+            case "h": {
+              while (true) {
+                const x = readNumber();
+                if (x == null) break;
+                currX = isRel ? currX + x : x;
+                anchors.push({ x: currX, y: currY });
+              }
+              break;
+            }
+            case "V":
+            case "v": {
+              while (true) {
+                const y = readNumber();
+                if (y == null) break;
+                currY = isRel ? currY + y : y;
+                anchors.push({ x: currX, y: currY });
+              }
+              break;
+            }
+            case "C":
+            case "c": {
+              while (true) {
+                const x1 = readNumber();
+                const y1 = readNumber();
+                const x2 = readNumber();
+                const y2 = readNumber();
+                const x = readNumber();
+                const y = readNumber();
+                if (
+                  x1 == null ||
+                  y1 == null ||
+                  x2 == null ||
+                  y2 == null ||
+                  x == null ||
+                  y == null
+                )
+                  break;
+                const ex = isRel ? currX + x : x;
+                const ey = isRel ? currY + y : y;
+                currX = ex;
+                currY = ey;
+                anchors.push({ x: currX, y: currY });
+              }
+              break;
+            }
+            case "S":
+            case "s": {
+              while (true) {
+                const x2 = readNumber();
+                const y2 = readNumber();
+                const x = readNumber();
+                const y = readNumber();
+                if (x2 == null || y2 == null || x == null || y == null) break;
+                const ex = isRel ? currX + x : x;
+                const ey = isRel ? currY + y : y;
+                currX = ex;
+                currY = ey;
+                anchors.push({ x: currX, y: currY });
+              }
+              break;
+            }
+            case "Q":
+            case "q": {
+              while (true) {
+                const x1 = readNumber();
+                const y1 = readNumber();
+                const x = readNumber();
+                const y = readNumber();
+                if (x1 == null || y1 == null || x == null || y == null) break;
+                const ex = isRel ? currX + x : x;
+                const ey = isRel ? currY + y : y;
+                currX = ex;
+                currY = ey;
+                anchors.push({ x: currX, y: currY });
+              }
+              break;
+            }
+            case "T":
+            case "t": {
+              while (true) {
+                const x = readNumber();
+                const y = readNumber();
+                if (x == null || y == null) break;
+                const ex = isRel ? currX + x : x;
+                const ey = isRel ? currY + y : y;
+                currX = ex;
+                currY = ey;
+                anchors.push({ x: currX, y: currY });
+              }
+              break;
+            }
+            case "A":
+            case "a": {
+              while (true) {
+                const rx = readNumber();
+                const ry = readNumber();
+                const rot = readNumber();
+                const laf = readNumber();
+                const sf = readNumber();
+                const x = readNumber();
+                const y = readNumber();
+                if (
+                  rx == null ||
+                  ry == null ||
+                  rot == null ||
+                  laf == null ||
+                  sf == null ||
+                  x == null ||
+                  y == null
+                )
+                  break;
+                const ex = isRel ? currX + x : x;
+                const ey = isRel ? currY + y : y;
+                currX = ex;
+                currY = ey;
+                anchors.push({ x: currX, y: currY });
+              }
+              break;
+            }
+            case "Z":
+            case "z": {
+              currX = subpathStartX;
+              currY = subpathStartY;
+              // Do not add an extra anchor for Z; the subpath start was already recorded
+              break;
+            }
+            default: {
+              // Unsupported command; attempt to skip
+              i++;
+              break;
+            }
+          }
+        }
+        return anchors;
+      }
+
       // Function to check if any diagnostics are enabled
       function areDiagnosticsEnabled() {
         return (
@@ -421,7 +678,7 @@
 
           // Add red dots for existing points
           controlDisks.forEach((disk) => {
-            svgContent += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="3" fill="red" />`;
+            svgContent += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${visualOptions.controlDisks.dotSize}" fill="${visualOptions.controlDisks.centerColor}" />`;
           });
 
           // If we're currently dragging, show the preview circle
@@ -468,28 +725,32 @@
           if (showControlDisks) {
             const controlDisks = getControlDisks();
             controlDisks.forEach((disk, index) => {
-              // Add center point with move cursor class
+              // Add center point with move cursor class; we're going to add the circle twice -- once to capture
+              // the mouse events (twice as wide) and once to show the center point visually
               normalLines += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${visualOptions.controlDisks.dotSize}" 
-                fill="${visualOptions.controlDisks.centerColor}" data-index="${index}" data-type="center" class="center-point" />`;
+                fill="${visualOptions.controlDisks.centerColor}"/>`;
+              normalLines += `<circle cx="${disk.center.x}" cy="${
+                disk.center.y
+              }" r="${visualOptions.controlDisks.dotSize * 2}" 
+                fill="transparent" data-index="${index}" data-type="center" class="center-point" />`;
 
               const handleX = disk.center.x + disk.radius;
               const handleY = disk.center.y;
+              normalLines += `<circle cx="${handleX}" cy="${handleY}" r="${visualOptions.controlDisks.dotSize}" 
+                fill="blue" data-index="${index}"/>`;
               normalLines += `<circle cx="${handleX}" cy="${handleY}" r="${
-                visualOptions.controlDisks.dotSize / 2
+                visualOptions.controlDisks.dotSize * 2
               }" 
-                fill="blue" data-index="${index}" data-type="radius" class="radius-handle" />`;
+                fill="transparent" data-index="${index}" data-type="radius" class="radius-handle" />`;
             });
           }
 
           if (showNormals) {
-            for (
-              let i = 0;
-              i < result.disks.length;
-              i += Math.floor(result.disks.length / 15)
-            ) {
+            const total = result.disks.length;
+            const step = Math.max(1, Math.floor(total / 15));
+            for (let i = 0; i < total; i += step) {
               const disk = result.disks[i];
               const normal = result.normals[i];
-
               normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}"
                                        x2="${
                                          disk.center.x + normal.x * disk.radius
@@ -502,8 +763,7 @@
                                        }"
                                        stroke-width="${
                                          visualOptions.normals.width
-                                       }" />`;
-
+                                       }"  stroke-dasharray="2,1"/>`;
               normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}"
                                        x2="${
                                          disk.center.x - normal.x * disk.radius
@@ -516,7 +776,7 @@
                                        }"
                                        stroke-width="${
                                          visualOptions.normals.width
-                                       }" />`;
+                                       }" stroke-dasharray="2,1"/>`;
             }
           }
 
@@ -538,7 +798,7 @@
             : 1;
 
           svgContent = `
-                  <path d="${result.fillPath}" fill="${fillColor}" opacity="${opacity}" stroke="none" />
+                  <path id="dbsc-shape-path" d="${result.fillPath}" fill="${fillColor}" opacity="${opacity}" stroke="none" />
                   ${skeletonPathElement}
                   ${controlCircles}
                   ${normalLines}
@@ -547,6 +807,68 @@
 
         // Create SVG
         visualDiv.innerHTML = createSVG(400, 200, svgContent);
+
+        // Metrics and optional path points overlay
+        const metricsDiv = document.getElementById("metrics");
+        const svg = visualDiv.querySelector("svg");
+        const pathEl =
+          svg?.querySelector("#dbsc-shape-path") || svg?.querySelector("path");
+        let length = 0;
+        try {
+          if (pathEl) length = pathEl.getTotalLength();
+        } catch (_) {}
+        const radii = controlDisks.map((d) => d.radius);
+        const minR = radii.length ? Math.min(...radii) : 0;
+        const maxR = radii.length ? Math.max(...radii) : 0;
+        const avgR = radii.length
+          ? (radii.reduce((a, b) => a + b, 0) / radii.length).toFixed(2)
+          : 0;
+        // Estimate shape points by sampling along path length (same basis as overlay)
+        let shapePointsCount = 0;
+        if (length > 0) {
+          try {
+            const samples = Math.min(1000, Math.max(1, Math.ceil(length / 2)));
+            shapePointsCount = samples + 1; // inclusive of start and end
+          } catch (_) {
+            shapePointsCount = 0;
+          }
+        }
+        if (metricsDiv) {
+          // Prefer anchor count if available, else fall back to sampled count
+          let anchorCount = 0;
+          try {
+            const d = (pathEl && pathEl.getAttribute("d")) || "";
+            anchorCount = parsePathAnchors(d).length;
+          } catch (_) {}
+          const shapePts = anchorCount || shapePointsCount;
+          metricsDiv.textContent = `Points: ${
+            controlDisks.length
+          }  |  Length: ${length.toFixed(
+            1
+          )}  |  Radius min/avg/max: ${minR}/${avgR}/${maxR}  |  Shape points: ${shapePts}`;
+        }
+
+        // Path points overlay (anchor points from actual path commands)
+        const showPathPoints = document.getElementById(
+          "showPathPointsToggle"
+        )?.checked;
+        if (showPathPoints && svg && pathEl) {
+          const d = pathEl.getAttribute("d") || "";
+          const anchors = parsePathAnchors(d);
+          if (anchors.length > 0) {
+            const ns = "http://www.w3.org/2000/svg";
+            const frag = document.createDocumentFragment();
+            for (const a of anchors) {
+              const c = document.createElementNS(ns, "circle");
+              c.setAttribute("cx", String(a.x));
+              c.setAttribute("cy", String(a.y));
+              c.setAttribute("r", "1");
+              c.setAttribute("fill", visualOptions.skeleton.color);
+              frag.appendChild(c);
+            }
+            svg.appendChild(frag);
+          }
+        }
 
         // Add hover effect for radius handles
         const radiusHandles = visualDiv.querySelectorAll(".radius-handle");
@@ -629,6 +951,61 @@
 
         // Set initial debug section visibility
         debugSection.style.display = debugToggle.checked ? "block" : "none";
+
+        // Export/copy buttons
+        const copyPathButton = document.getElementById("copyPathButton");
+        const copySvgButton = document.getElementById("copySvgButton");
+        const downloadSvgButton = document.getElementById("downloadSvgButton");
+
+        copyPathButton?.addEventListener("click", () => {
+          const svg = document.querySelector("#visualArea svg");
+          const path =
+            svg?.querySelector("#dbsc-shape-path") ||
+            svg?.querySelector("path");
+          if (!path) return;
+          const d = path.getAttribute("d") || "";
+          navigator.clipboard?.writeText(d);
+        });
+
+        copySvgButton?.addEventListener("click", () => {
+          const svg = document.querySelector("#visualArea svg");
+          const path =
+            svg?.querySelector("#dbsc-shape-path") ||
+            svg?.querySelector("path");
+          if (!path) return;
+          const d = path.getAttribute("d") || "";
+          const width = 400;
+          const height = 200;
+          const fillColor =
+            examplesData[exampleSelect.value]?.fillColor || "black";
+          const svgText = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><path d="${d}" fill="${fillColor}" stroke="none"/></svg>`;
+          navigator.clipboard?.writeText(svgText);
+        });
+
+        downloadSvgButton?.addEventListener("click", () => {
+          const svg = document.querySelector("#visualArea svg");
+          const path =
+            svg?.querySelector("#dbsc-shape-path") ||
+            svg?.querySelector("path");
+          if (!path) return;
+          const d = path.getAttribute("d") || "";
+          const width = 400;
+          const height = 200;
+          const fillColor =
+            examplesData[exampleSelect.value]?.fillColor || "black";
+          const svgText = `<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\"><path d=\"${d}\" fill=\"${fillColor}\" stroke=\"none\"/></svg>`;
+          const blob = new Blob([svgText], {
+            type: "image/svg+xml;charset=utf-8",
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "dbsc-shape.svg";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        });
 
         // Handle interactive point creation
         window.isDragging = false;
@@ -838,6 +1215,12 @@
           .addEventListener("change", updateCurve);
         document
           .getElementById("showDebugToggle")
+          ?.addEventListener("change", updateCurve);
+        document
+          .getElementById("showGridToggle")
+          ?.addEventListener("change", updateCurve);
+        document
+          .getElementById("showPathPointsToggle")
           ?.addEventListener("change", updateCurve);
       }
 
