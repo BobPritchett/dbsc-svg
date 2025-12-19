@@ -184,6 +184,12 @@
         ><input type="checkbox" id="showPathPointsToggle" /> Path Points</label
       >
       <label style="margin-left: 20px"
+        ><input type="checkbox" id="skinningToggle" /> Cusp Removal</label
+      >
+      <label style="margin-left: 20px"
+        ><input type="checkbox" id="useColorsToggle" /> Use Colors</label
+      >
+      <label style="margin-left: 20px"
         ><input type="checkbox" id="showDebugToggle" checked /> Debug Log</label
       >
     </div>
@@ -199,6 +205,7 @@
             <option value="example5">Interactive Curve</option>
             <option value="example6">Closed Circle</option>
             <option value="example7">Closed Heart</option>
+            <option value="example8">Cusps</option>
           </select>
           <button id="addPointButton">Add Point</button>
           <button id="resetButton">Reset</button>
@@ -219,8 +226,9 @@
         <div class="example-content">
           <div class="data-column">
             <div class="instructions">
-              Edit points below. Each line should be in the format x,y,radius.
-              Add 'z' as the last line to create a closed shape.
+              Edit points below. Each line should be in the format
+              x,y,radius,color. Add 'z' as the last line to create a closed
+              shape.
             </div>
             <textarea id="pointsData"></textarea>
             <div id="errorMessage" class="error-message"></div>
@@ -302,6 +310,11 @@
           fillColor: "black",
           data: "162,177,1\n90,78,6\n156,43,4\n162,116,0\n180,50,4\n238,92,6\nz",
         },
+        example8: {
+          title: "Cusps",
+          fillColor: "black",
+          data: "50,150,10\n150,50,25\n250,150,15\n350,100,50\n213,32,11",
+        },
       };
 
       // Define visual styling options
@@ -363,9 +376,22 @@
       // Helper function to update textarea from control disks
       function updateTextareaFromDisks(controlDisks, isClosed) {
         const textarea = document.getElementById("pointsData");
-        const lines = controlDisks.map(
-          (disk) => `${disk.center.x},${disk.center.y},${disk.radius}`
-        );
+        const lines = controlDisks.map((disk) => {
+          const base = `${disk.center.x},${disk.center.y},${disk.radius}`;
+          if (disk.customColorStr) {
+            return `${base},${disk.customColorStr}`;
+          }
+          if (
+            disk.color &&
+            (disk.color.r !== 0 ||
+              disk.color.g !== 0 ||
+              disk.color.b !== 0 ||
+              disk.color.a !== 1)
+          ) {
+            return `${base},rgba(${disk.color.r},${disk.color.g},${disk.color.b},${disk.color.a})`;
+          }
+          return base;
+        });
         if (isClosed) {
           lines.push("z");
         }
@@ -377,6 +403,31 @@
         const dx = point.x - circle.x;
         const dy = point.y - circle.y;
         return dx * dx + dy * dy <= radius * radius;
+      }
+
+      // Helper to parse CSS color to RGBA
+      function parseColor(colorStr) {
+        if (!colorStr) return null;
+        const div = document.createElement("div");
+        div.style.display = "none";
+        div.style.color = colorStr;
+        document.body.appendChild(div);
+        const computed = window.getComputedStyle(div).color;
+        document.body.removeChild(div);
+
+        // computed is "rgb(r, g, b)" or "rgba(r, g, b, a)"
+        const match = computed.match(
+          /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/
+        );
+        if (match) {
+          return {
+            r: parseInt(match[1]),
+            g: parseInt(match[2]),
+            b: parseInt(match[3]),
+            a: match[4] ? parseFloat(match[4]) : 1,
+          };
+        }
+        return null;
       }
 
       // Parse text data into control disks
@@ -394,7 +445,7 @@
           }
 
           const parts = trimmedLine.split(",");
-          if (parts.length !== 3) {
+          if (parts.length < 3) {
             hasError = true;
             continue;
           }
@@ -408,9 +459,19 @@
             continue;
           }
 
+          let color = null;
+          let customColorStr = null;
+
+          if (parts.length >= 4) {
+            customColorStr = parts[3].trim();
+            color = parseColor(customColorStr);
+          }
+
           controlDisks.push({
             center: { x, y },
             radius,
+            color,
+            customColorStr,
           });
         }
 
@@ -667,14 +728,29 @@
         );
 
         // Get toggle states
-        const showSkeleton =
-          document.getElementById("showSkeletonToggle").checked;
-        const showNormals =
-          document.getElementById("showNormalsToggle").checked;
-        const showControlDisks = document.getElementById(
-          "showControlDisksToggle"
-        ).checked;
+        const showSkeleton = document.getElementById("showSkeletonToggle").checked;
+        const showNormals = document.getElementById("showNormalsToggle").checked;
+        const showControlDisks = document.getElementById("showControlDisksToggle").checked;
         const showDiagnostics = areDiagnosticsEnabled();
+        const useSkinning = document.getElementById("skinningToggle")?.checked || false;
+        const useColors = document.getElementById("useColorsToggle")?.checked || false;
+
+        // Apply random primary colors if enabled, but respect custom colors
+        if (useColors) {
+          const palette = [
+            { r: 255, g: 0, b: 0, a: 1 }, // Red
+            { r: 0, g: 255, b: 0, a: 1 }, // Green
+            { r: 0, g: 0, b: 255, a: 1 }, // Blue
+            { r: 255, g: 255, b: 0, a: 1 }, // Yellow
+            { r: 0, g: 255, b: 255, a: 1 }, // Cyan
+            { r: 255, g: 0, b: 255, a: 1 }, // Magenta
+          ];
+          controlDisks.forEach((disk, i) => {
+            if (!disk.color) {
+              disk.color = palette[i % palette.length];
+            }
+          });
+        }
 
         // Create SVG content
         let svgContent = "";
@@ -723,11 +799,17 @@
             closed: isClosed,
           });
 
-          // Generate paths
-          const result = bspline.toSVGPath();
+          // Generate paths using new render API
+          // 'simple' = original perpendicular-normal approach
+          // 'skinning' = cusp removal algorithm
+          const result = bspline.render({
+            method: useSkinning ? 'skinning' : 'simple',
+            tessellate: useColors,
+            tolerance: 0.5
+          });
 
           const svgPathOutput = document.getElementById("svgPathOutput");
-          if (svgPathOutput) svgPathOutput.value = result.fillPath;
+          if (svgPathOutput) svgPathOutput.value = result.outlinePath;
 
           // Control disks with custom styling
           const controlCircles = showControlDisks
@@ -739,10 +821,11 @@
 
           // Add hover effect for radius handles
           if (showControlDisks) {
-            const controlDisks = getControlDisks();
-            controlDisks.forEach((disk, index) => {
-              // Add center point with move cursor class; we're going to add the circle twice -- once to capture
-              // the mouse events (twice as wide) and once to show the center point visually
+            // Re-fetch control disks to ensure we have the ones with updated coordinates
+            const currentControlDisks = bspline.controlDisks.slice(0, isClosed ? bspline.controlDisks.length - bspline.degree : bspline.controlDisks.length);
+            
+            currentControlDisks.forEach((disk, index) => {
+              // Add center point with move cursor class
               normalLines += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${visualOptions.controlDisks.dotSize}" 
                 fill="${visualOptions.controlDisks.centerColor}"/>`;
               normalLines += `<circle cx="${disk.center.x}" cy="${
@@ -762,38 +845,29 @@
           }
 
           if (showNormals) {
-            const total = result.disks.length;
-            const step = Math.max(1, Math.floor(total / 15));
-            for (let i = 0; i < total; i += step) {
-              const disk = result.disks[i];
-              const normal = result.normals[i];
-              normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}"
-                                       x2="${
-                                         disk.center.x + normal.x * disk.radius
-                                       }"
-                                       y2="${
-                                         disk.center.y + normal.y * disk.radius
-                                       }"
-                                       stroke="${
-                                         visualOptions.normals.positiveColor
-                                       }"
-                                       stroke-width="${
-                                         visualOptions.normals.width
-                                       }"  stroke-dasharray="2,1"/>`;
-              normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}"
-                                       x2="${
-                                         disk.center.x - normal.x * disk.radius
-                                       }"
-                                       y2="${
-                                         disk.center.y - normal.y * disk.radius
-                                       }"
-                                       stroke="${
-                                         visualOptions.normals.negativeColor
-                                       }"
-                                       stroke-width="${
-                                         visualOptions.normals.width
-                                       }" stroke-dasharray="2,1"/>`;
-            }
+             // We need normals for visualization. We can compute them from the sampled circles in result.
+             const disks = result.circles || [];
+             const step = Math.max(1, Math.floor(disks.length / 15));
+             
+             for (let i = 0; i < disks.length; i += step) {
+                 const disk = disks[i];
+                 // Calculate normal using derivative at t
+                 const d = bspline.evaluateDerivativeAt(disk.t);
+                 const len = Math.sqrt(d.x*d.x + d.y*d.y);
+                 const nx = len > 0 ? -d.y/len : 0;
+                 const ny = len > 0 ? d.x/len : 0;
+                 
+                 normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}"
+                                       x2="${disk.center.x + nx * disk.radius}"
+                                       y2="${disk.center.y + ny * disk.radius}"
+                                       stroke="${visualOptions.normals.positiveColor}"
+                                       stroke-width="${visualOptions.normals.width}" stroke-dasharray="2,1"/>`;
+                 normalLines += `<line x1="${disk.center.x}" y1="${disk.center.y}"
+                                       x2="${disk.center.x - nx * disk.radius}"
+                                       y2="${disk.center.y - ny * disk.radius}"
+                                       stroke="${visualOptions.normals.negativeColor}"
+                                       stroke-width="${visualOptions.normals.width}" stroke-dasharray="2,1"/>`;
+             }
           }
 
           // Create the skeleton path element if enabled
@@ -806,15 +880,26 @@
             : "";
 
           // Choose appropriate fill color and opacity based on diagnostics
-          const fillColor = showDiagnostics
-            ? visualOptions.curve.diagnosticColor
-            : visualOptions.curve.normalColor;
-          const opacity = showDiagnostics
-            ? visualOptions.curve.diagnosticOpacity
-            : 1;
+          let fillContent = "";
+          
+          if (useColors && result.mesh && result.mesh.length > 0) {
+              // Render mesh for gradient effect
+              fillContent = `<g class="dbsc-mesh">${result.mesh.join('')}</g>`;
+              // Outline stroke only
+              fillContent += `<path id="dbsc-shape-path" d="${result.outlinePath}" fill="none" stroke="black" stroke-width="0.5" />`;
+          } else {
+              // Standard fill
+              const fillColor = showDiagnostics
+                ? visualOptions.curve.diagnosticColor
+                : visualOptions.curve.normalColor;
+              const opacity = showDiagnostics
+                ? visualOptions.curve.diagnosticOpacity
+                : 1;
+              fillContent = `<path id="dbsc-shape-path" d="${result.outlinePath}" fill="${fillColor}" opacity="${opacity}" stroke="none" />`;
+          }
 
           svgContent = `
-                  <path id="dbsc-shape-path" d="${result.fillPath}" fill="${fillColor}" opacity="${opacity}" stroke="none" />
+                  ${fillContent}
                   ${skeletonPathElement}
                   ${controlCircles}
                   ${normalLines}
@@ -824,50 +909,38 @@
         // Create SVG
         visualDiv.innerHTML = createSVG(400, 200, svgContent);
 
-        // Metrics and optional path points overlay
+        // Metrics and overlay logic (kept same as before, simplified reference)
         const metricsDiv = document.getElementById("metrics");
         const svg = visualDiv.querySelector("svg");
-        const pathEl =
-          svg?.querySelector("#dbsc-shape-path") || svg?.querySelector("path");
+        const pathEl = svg?.querySelector("#dbsc-shape-path") || svg?.querySelector("path");
         let length = 0;
-        try {
-          if (pathEl) length = pathEl.getTotalLength();
-        } catch (_) {}
+        try { if (pathEl) length = pathEl.getTotalLength(); } catch (_) {}
+        
         const radii = controlDisks.map((d) => d.radius);
         const minR = radii.length ? Math.min(...radii) : 0;
         const maxR = radii.length ? Math.max(...radii) : 0;
-        const avgR = radii.length
-          ? (radii.reduce((a, b) => a + b, 0) / radii.length).toFixed(2)
-          : 0;
-        // Estimate shape points by sampling along path length (same basis as overlay)
+        const avgR = radii.length ? (radii.reduce((a, b) => a + b, 0) / radii.length).toFixed(2) : 0;
+        
         let shapePointsCount = 0;
         if (length > 0) {
-          try {
-            const samples = Math.min(1000, Math.max(1, Math.ceil(length / 2)));
-            shapePointsCount = samples + 1; // inclusive of start and end
-          } catch (_) {
-            shapePointsCount = 0;
-          }
+            try {
+                const samples = Math.min(1000, Math.max(1, Math.ceil(length / 2)));
+                shapePointsCount = samples + 1;
+            } catch (_) {}
         }
+
         if (metricsDiv) {
-          // Prefer anchor count if available, else fall back to sampled count
           let anchorCount = 0;
           try {
             const d = (pathEl && pathEl.getAttribute("d")) || "";
             anchorCount = parsePathAnchors(d).length;
           } catch (_) {}
           const shapePts = anchorCount || shapePointsCount;
-          metricsDiv.textContent = `Points: ${
-            controlDisks.length
-          }  |  Length: ${length.toFixed(
-            1
-          )}  |  Radius min/avg/max: ${minR}/${avgR}/${maxR}  |  Shape points: ${shapePts}`;
+          metricsDiv.textContent = `Points: ${controlDisks.length}  |  Length: ${length.toFixed(1)}  |  Radius min/avg/max: ${minR}/${avgR}/${maxR}  |  Shape points: ${shapePts}`;
         }
 
-        // Path points overlay (anchor points from actual path commands)
-        const showPathPoints = document.getElementById(
-          "showPathPointsToggle"
-        )?.checked;
+        // Path points overlay
+        const showPathPoints = document.getElementById("showPathPointsToggle")?.checked;
         if (showPathPoints && svg && pathEl) {
           const d = pathEl.getAttribute("d") || "";
           const anchors = parsePathAnchors(d);
@@ -886,30 +959,17 @@
           }
         }
 
-        // Add hover effect for radius handles
+        // Add hover effects (same as before)
         const radiusHandles = visualDiv.querySelectorAll(".radius-handle");
         radiusHandles.forEach((handle) => {
-          handle.addEventListener("mouseenter", () => {
-            visualArea.classList.add("grab");
-          });
-          handle.addEventListener("mouseleave", () => {
-            if (!window.draggingRadiusHandle) {
-              visualArea.classList.remove("grab");
-            }
-          });
+          handle.addEventListener("mouseenter", () => { visualArea.classList.add("grab"); });
+          handle.addEventListener("mouseleave", () => { if (!window.draggingRadiusHandle) visualArea.classList.remove("grab"); });
         });
 
-        // Add hover effect for center points
         const centerPoints = visualDiv.querySelectorAll(".center-point");
         centerPoints.forEach((point) => {
-          point.addEventListener("mouseenter", () => {
-            visualArea.classList.add("move");
-          });
-          point.addEventListener("mouseleave", () => {
-            if (!window.draggingCenterPoint) {
-              visualArea.classList.remove("move");
-            }
-          });
+          point.addEventListener("mouseenter", () => { visualArea.classList.add("move"); });
+          point.addEventListener("mouseleave", () => { if (!window.draggingCenterPoint) visualArea.classList.remove("move"); });
         });
       }
 
@@ -1229,6 +1289,12 @@
         document
           .getElementById("showControlDisksToggle")
           .addEventListener("change", updateCurve);
+        document
+          .getElementById("skinningToggle")
+          ?.addEventListener("change", updateCurve);
+        document
+          .getElementById("useColorsToggle")
+          ?.addEventListener("change", updateCurve);
         document
           .getElementById("showDebugToggle")
           ?.addEventListener("change", updateCurve);
