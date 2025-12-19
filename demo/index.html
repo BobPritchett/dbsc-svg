@@ -42,13 +42,13 @@
         gap: 24px;
       }
       .data-column {
-        flex: 1;
+        flex: 0 0 20ch;
         display: flex;
         flex-direction: column;
         gap: 8px;
       }
       .visual-column {
-        flex: 2;
+        flex: 1;
         display: flex;
         flex-direction: column;
         gap: 8px;
@@ -235,6 +235,16 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div id="svgPathSection" style="margin-top: 32px">
+      <h2>SVG Path</h2>
+      <textarea
+        id="svgPathOutput"
+        readonly
+        onclick="this.select()"
+        style="min-height: 100px"
+      ></textarea>
     </div>
 
     <div id="debugSection">
@@ -671,6 +681,9 @@
 
         // If we have fewer than 4 points, show red dots for existing points
         if (controlDisks.length < 4) {
+          const svgPathOutput = document.getElementById("svgPathOutput");
+          if (svgPathOutput) svgPathOutput.value = "";
+
           errorDiv.textContent =
             controlDisks.length === 0
               ? "Click anywhere in the area to add points"
@@ -712,6 +725,9 @@
 
           // Generate paths
           const result = bspline.toSVGPath();
+
+          const svgPathOutput = document.getElementById("svgPathOutput");
+          if (svgPathOutput) svgPathOutput.value = result.fillPath;
 
           // Control disks with custom styling
           const controlCircles = showControlDisks
@@ -1087,7 +1103,7 @@
 
           const newPoint = `${textarea.value ? "\n" : ""}${window.startX},${
             window.startY
-          },1`;
+          },4`;
           textarea.value += newPoint;
           updateCurve();
 
