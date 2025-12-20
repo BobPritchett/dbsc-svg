@@ -922,11 +922,19 @@ class DiskBSpline {
     }
     
     // End cap (semicircle)
+    // For a semicircle (180°), large-arc-flag should be 0
+    // Sweep flag determines direction: we need to go from left to right side
     const lastCircle = circles[circles.length - 1];
     if (!this.closed && lastCircle.radius > 0) {
       const lastLeft = leftPoints[leftPoints.length - 1];
       const lastRight = rightPoints[rightPoints.length - 1];
-      d += ` A ${lastCircle.radius} ${lastCircle.radius} 0 1 0 ${lastRight.x} ${lastRight.y}`;
+      
+      // Determine sweep direction based on the curve direction at the end
+      // We want to go around the "outside" of the endpoint
+      const lastDeriv = this.evaluateDerivativeAt(lastCircle.t || 0);
+      const endSweep = (lastDeriv.x * (lastRight.y - lastLeft.y) - lastDeriv.y * (lastRight.x - lastLeft.x)) > 0 ? 1 : 0;
+      
+      d += ` A ${lastCircle.radius} ${lastCircle.radius} 0 0 ${endSweep} ${lastRight.x} ${lastRight.y}`;
       arcCount++;
     } else {
       d += ` L ${rightPoints[rightPoints.length - 1].x} ${rightPoints[rightPoints.length - 1].y}`;
@@ -940,9 +948,22 @@ class DiskBSpline {
     }
     
     // Start cap (semicircle)
+    // For a semicircle (180°), large-arc-flag should be 0
+    // We're going from firstRight (right side) to firstLeft (left side)
+    // This is the reverse direction of the end cap
     const firstCircle = circles[0];
     if (!this.closed && firstCircle.radius > 0) {
-      d += ` A ${firstCircle.radius} ${firstCircle.radius} 0 1 0 ${leftPoints[0].x} ${leftPoints[0].y}`;
+      const firstRight = rightPoints[0];
+      const firstLeft = leftPoints[0];
+      
+      // Determine sweep direction - same formula as end cap but with reversed points
+      // End cap: lastDeriv.x * (lastRight.y - lastLeft.y) - lastDeriv.y * (lastRight.x - lastLeft.x)
+      // Start cap: firstDeriv.x * (firstLeft.y - firstRight.y) - firstDeriv.y * (firstLeft.x - firstRight.x)
+      // But we need to flip the sign since we're going the opposite direction
+      const firstDeriv = this.evaluateDerivativeAt(firstCircle.t || 0);
+      const startSweep = (firstDeriv.x * (firstLeft.y - firstRight.y) - firstDeriv.y * (firstLeft.x - firstRight.x)) < 0 ? 1 : 0;
+      
+      d += ` A ${firstCircle.radius} ${firstCircle.radius} 0 0 ${startSweep} ${firstLeft.x} ${firstLeft.y}`;
       arcCount++;
     }
     
