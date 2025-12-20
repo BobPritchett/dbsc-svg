@@ -278,42 +278,42 @@
         example1: {
           title: "Simple Variable Width Curve",
           fillColor: "black",
-          data: "50,150,10\n150,50,25\n250,150,15\n350,100,5",
+          data: "50,150,10,red\n150,50,25,green\n250,150,15,blue\n350,100,5,yellow",
         },
         example2: {
           title: "Complex Variable Width Curve",
           fillColor: "black",
-          data: "5,180,1\n70,170,4\n80,140,6\n20,120,10\n40,60,12\n150,20,20\n260,60,12\n260,120,10\n220,140,6\n230,170,4\n295,180,1",
+          data: "5,180,1,aqua\n70,170,4,black\n80,140,6,blue\n20,120,10,fuchsia\n40,60,12,gray\n150,20,20,green\n260,60,12,lime\n260,120,10,maroon\n220,140,6,navy\n230,170,4,olive\n295,180,1,purple",
         },
         example3: {
           title: "Calligraphic Stroke",
           fillColor: "black",
-          data: "162,177,1\n90,78,6\n156,43,4\n162,116,0\n180,50,4\n238,92,6\n164,190,1",
+          data: "162,177,1,red\n90,78,6,silver\n156,43,4,teal\n162,116,0,white\n180,50,4,yellow\n238,92,6,aqua\n164,190,1,blue",
         },
         example4: {
           title: "Calligraphic Effect",
           fillColor: "black",
-          data: "50,100,3\n100,80,8\n150,50,20\n200,80,30\n250,150,15\n300,120,7\n350,100,3",
+          data: "50,100,3,red\n100,80,8,green\n150,50,20,blue\n200,80,30,yellow\n250,150,15,aqua\n300,120,7,fuchsia\n350,100,3,red",
         },
         example5: {
           title: "Interactive Curve",
           fillColor: "black",
-          data: "50,100,10\n150,50,15\n250,50,20\n350,100,10",
+          data: "50,100,10,red\n150,50,15,green\n250,50,20,blue\n350,100,10,yellow",
         },
         example6: {
           title: "Closed Circle",
           fillColor: "black",
-          data: "80,60,20\n180,60,1\n180,160,20\n80,160,1\nz",
+          data: "80,60,20,red\n180,60,1,green\n180,160,20,blue\n80,160,1,yellow\nz",
         },
         example7: {
           title: "Closed Heart",
           fillColor: "black",
-          data: "162,177,1\n90,78,6\n156,43,4\n162,116,0\n180,50,4\n238,92,6\nz",
+          data: "162,177,1,red\n90,78,6,fuchsia\n156,43,4,maroon\n162,116,0,red\n180,50,4,fuchsia\n238,92,6,maroon\nz",
         },
         example8: {
           title: "Cusps",
           fillColor: "black",
-          data: "50,150,10\n150,50,25\n250,150,15\n350,100,50\n213,32,11",
+          data: "50,150,10,red\n150,50,25,maroon\n250,150,15,yellow\n350,100,50,green\n213,32,11,blue",
         },
       };
 
@@ -408,6 +408,45 @@
       // Helper to parse CSS color to RGBA
       function parseColor(colorStr) {
         if (!colorStr) return null;
+        
+        // Trim whitespace and convert to lowercase for easier matching
+        const trimmed = colorStr.trim().toLowerCase();
+        
+        // Handle hex colors (#ff0000 or #ff00ff33)
+        const hexMatch = trimmed.match(/^#([0-9a-f]{6})([0-9a-f]{2})?$/);
+        if (hexMatch) {
+          const r = parseInt(hexMatch[1].substring(0, 2), 16);
+          const g = parseInt(hexMatch[1].substring(2, 4), 16);
+          const b = parseInt(hexMatch[1].substring(4, 6), 16);
+          const a = hexMatch[2] ? parseInt(hexMatch[2], 16) / 255 : 1;
+          return { r, g, b, a };
+        }
+        
+        // Handle 16 basic CSS color names (CSS 1 specification)
+        const basicColors = {
+          aqua: { r: 0, g: 255, b: 255, a: 1 },
+          black: { r: 0, g: 0, b: 0, a: 1 },
+          blue: { r: 0, g: 0, b: 255, a: 1 },
+          fuchsia: { r: 255, g: 0, b: 255, a: 1 },
+          gray: { r: 128, g: 128, b: 128, a: 1 },
+          green: { r: 0, g: 128, b: 0, a: 1 },
+          lime: { r: 0, g: 255, b: 0, a: 1 },
+          maroon: { r: 128, g: 0, b: 0, a: 1 },
+          navy: { r: 0, g: 0, b: 128, a: 1 },
+          olive: { r: 128, g: 128, b: 0, a: 1 },
+          purple: { r: 128, g: 0, b: 128, a: 1 },
+          red: { r: 255, g: 0, b: 0, a: 1 },
+          silver: { r: 192, g: 192, b: 192, a: 1 },
+          teal: { r: 0, g: 128, b: 128, a: 1 },
+          white: { r: 255, g: 255, b: 255, a: 1 },
+          yellow: { r: 255, g: 255, b: 0, a: 1 }
+        };
+        
+        if (basicColors[trimmed]) {
+          return basicColors[trimmed];
+        }
+        
+        // Fall back to browser's computed style for other formats (rgb(), rgba(), etc.)
         const div = document.createElement("div");
         div.style.display = "none";
         div.style.color = colorStr;
@@ -464,7 +503,16 @@
 
           if (parts.length >= 4) {
             customColorStr = parts[3].trim();
-            color = parseColor(customColorStr);
+            const parsedColor = parseColor(customColorStr);
+            if (parsedColor) {
+              // Normalize colors from 0-255 range to 0-1 range (B-spline expects 0-1)
+              color = {
+                r: parsedColor.r / 255,
+                g: parsedColor.g / 255,
+                b: parsedColor.b / 255,
+                a: parsedColor.a
+              };
+            }
           }
 
           controlDisks.push({
@@ -738,16 +786,39 @@
         // Apply random primary colors if enabled, but respect custom colors
         if (useColors) {
           const palette = [
-            { r: 255, g: 0, b: 0, a: 1 }, // Red
-            { r: 0, g: 255, b: 0, a: 1 }, // Green
-            { r: 0, g: 0, b: 255, a: 1 }, // Blue
-            { r: 255, g: 255, b: 0, a: 1 }, // Yellow
-            { r: 0, g: 255, b: 255, a: 1 }, // Cyan
-            { r: 255, g: 0, b: 255, a: 1 }, // Magenta
+            { r: 1, g: 0, b: 0, a: 1 }, // Red (normalized to 0-1)
+            { r: 0, g: 1, b: 0, a: 1 }, // Green
+            { r: 0, g: 0, b: 1, a: 1 }, // Blue
+            { r: 1, g: 1, b: 0, a: 1 }, // Yellow
+            { r: 0, g: 1, b: 1, a: 1 }, // Cyan
+            { r: 1, g: 0, b: 1, a: 1 }, // Magenta
           ];
           controlDisks.forEach((disk, i) => {
             if (!disk.color) {
               disk.color = palette[i % palette.length];
+            } else {
+              // Normalize colors from 0-255 range to 0-1 range if needed
+              // Check if color values are > 1 (likely 0-255 range)
+              if (disk.color.r > 1 || disk.color.g > 1 || disk.color.b > 1) {
+                disk.color = {
+                  r: disk.color.r / 255,
+                  g: disk.color.g / 255,
+                  b: disk.color.b / 255,
+                  a: disk.color.a
+                };
+              }
+            }
+          });
+        } else {
+          // Even if colors aren't enabled, normalize any existing colors
+          controlDisks.forEach((disk) => {
+            if (disk.color && (disk.color.r > 1 || disk.color.g > 1 || disk.color.b > 1)) {
+              disk.color = {
+                r: disk.color.r / 255,
+                g: disk.color.g / 255,
+                b: disk.color.b / 255,
+                a: disk.color.a
+              };
             }
           });
         }
@@ -802,8 +873,11 @@
           // Generate paths using new render API
           // 'simple' = original perpendicular-normal approach
           // 'skinning' = cusp removal algorithm
+          // 'analytical' = analytical envelope (better for mesh generation)
+          // When colors are enabled, use 'analytical' for better mesh quality
+          const renderMethod = useSkinning ? 'skinning' : (useColors ? 'analytical' : 'simple');
           const result = bspline.render({
-            method: useSkinning ? 'skinning' : 'simple',
+            method: renderMethod,
             tessellate: useColors,
             tolerance: 0.5
           });
@@ -882,11 +956,73 @@
           // Choose appropriate fill color and opacity based on diagnostics
           let fillContent = "";
           
+          // Debug: Log mesh info
+          if (useColors) {
+            console.log('Mesh rendering:', {
+              useColors,
+              meshExists: !!result.mesh,
+              meshLength: result.mesh?.length || 0,
+              tessellate: useColors,
+              firstMeshItem: result.mesh?.[0]?.substring(0, 100) || 'none'
+            });
+          }
+          
           if (useColors && result.mesh && result.mesh.length > 0) {
               // Render mesh for gradient effect
               fillContent = `<g class="dbsc-mesh">${result.mesh.join('')}</g>`;
+              
+              // Add filled semicircle end caps for open strokes
+              if (!isClosed && result.circles && result.circles.length > 0) {
+                  const firstCircle = result.circles[0];
+                  const lastCircle = result.circles[result.circles.length - 1];
+                  
+                  // Get envelope points for semicircle calculation
+                  const firstEnv = bspline.evaluateEnvelopeAt(firstCircle.t || 0);
+                  const lastEnv = bspline.evaluateEnvelopeAt(lastCircle.t || 0);
+                  
+                  // Convert colors from 0-1 range to 0-255 for SVG
+                  const firstColor = firstCircle.color || { r: 0, g: 0, b: 0, a: 1 };
+                  const lastColor = lastCircle.color || { r: 0, g: 0, b: 0, a: 1 };
+                  
+                  const firstR = Math.floor(firstColor.r * 255);
+                  const firstG = Math.floor(firstColor.g * 255);
+                  const firstB = Math.floor(firstColor.b * 255);
+                  const firstA = firstColor.a.toFixed(3);
+                  const firstColorStr = `rgba(${firstR},${firstG},${firstB},${firstA})`;
+                  
+                  const lastR = Math.floor(lastColor.r * 255);
+                  const lastG = Math.floor(lastColor.g * 255);
+                  const lastB = Math.floor(lastColor.b * 255);
+                  const lastA = lastColor.a.toFixed(3);
+                  const lastColorStr = `rgba(${lastR},${lastG},${lastB},${lastA})`;
+                  
+                  // Create semicircle paths for start and end caps
+                  if (firstCircle.radius > 0) {
+                      // Start cap: semicircle from right to left, then close through center
+                      const startDeriv = bspline.evaluateDerivativeAt(firstCircle.t || 0);
+                      const startSweep = (startDeriv.x * (firstEnv.left.y - firstEnv.right.y) - startDeriv.y * (firstEnv.left.x - firstEnv.right.x)) < 0 ? 1 : 0;
+                      // Path: right point -> arc to left point -> line to center -> close
+                      const startCapPath = `M ${firstEnv.right.x.toFixed(2)} ${firstEnv.right.y.toFixed(2)} A ${firstCircle.radius.toFixed(2)} ${firstCircle.radius.toFixed(2)} 0 0 ${startSweep} ${firstEnv.left.x.toFixed(2)} ${firstEnv.left.y.toFixed(2)} L ${firstCircle.center.x.toFixed(2)} ${firstCircle.center.y.toFixed(2)} Z`;
+                      fillContent += `<path d="${startCapPath}" fill="${firstColorStr}" stroke="${firstColorStr}" stroke-width="0.5" />`;
+                  }
+                  
+                  if (lastCircle.radius > 0) {
+                      // End cap: semicircle from left to right, then close through center
+                      const lastDeriv = bspline.evaluateDerivativeAt(lastCircle.t || 0);
+                      const endSweep = (lastDeriv.x * (lastEnv.right.y - lastEnv.left.y) - lastDeriv.y * (lastEnv.right.x - lastEnv.left.x)) > 0 ? 1 : 0;
+                      // Path: left point -> arc to right point -> line to center -> close
+                      const endCapPath = `M ${lastEnv.left.x.toFixed(2)} ${lastEnv.left.y.toFixed(2)} A ${lastCircle.radius.toFixed(2)} ${lastCircle.radius.toFixed(2)} 0 0 ${endSweep} ${lastEnv.right.x.toFixed(2)} ${lastEnv.right.y.toFixed(2)} L ${lastCircle.center.x.toFixed(2)} ${lastCircle.center.y.toFixed(2)} Z`;
+                      fillContent += `<path d="${endCapPath}" fill="${lastColorStr}" stroke="${lastColorStr}" stroke-width="0.5" />`;
+                  }
+              }
+              
               // Outline stroke only
-              fillContent += `<path id="dbsc-shape-path" d="${result.outlinePath}" fill="none" stroke="black" stroke-width="0.5" />`;
+              fillContent += `<path id="dbsc-shape-path" d="${result.outlinePath}" fill="none" />`;
+          } else if (useColors && result.mesh && result.mesh.length === 0) {
+              // Fallback: show outline with warning
+              console.warn('Mesh is empty but colors are enabled. Showing outline only.');
+              fillContent = `<path id="dbsc-shape-path" d="${result.outlinePath}" fill="none" stroke="red" stroke-width="2" stroke-dasharray="5,5" />`;
+              fillContent += `<text x="10" y="20" font-size="12" fill="red">Warning: Mesh is empty</text>`;
           } else {
               // Standard fill
               const fillColor = showDiagnostics
@@ -936,7 +1072,10 @@
             anchorCount = parsePathAnchors(d).length;
           } catch (_) {}
           const shapePts = anchorCount || shapePointsCount;
-          metricsDiv.textContent = `Points: ${controlDisks.length}  |  Length: ${length.toFixed(1)}  |  Radius min/avg/max: ${minR}/${avgR}/${maxR}  |  Shape points: ${shapePts}`;
+          const meshInfo = useColors && result.mesh 
+            ? `  |  Mesh: ${result.mesh.length} polygons` 
+            : '';
+          metricsDiv.textContent = `Points: ${controlDisks.length}  |  Length: ${length.toFixed(1)}  |  Radius min/avg/max: ${minR}/${avgR}/${maxR}  |  Shape points: ${shapePts}${meshInfo}`;
         }
 
         // Path points overlay

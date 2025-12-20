@@ -1003,34 +1003,59 @@ class DiskBSpline {
        const c1 = circles[i];
        const c2 = circles[i+1];
        
-       // For coloring, we'll interpolate the color at the midpoint of the segment
-       const midColor = {
-         r: Math.round((c1.color.r + c2.color.r) / 2 * 255),
-         g: Math.round((c1.color.g + c2.color.g) / 2 * 255),
-         b: Math.round((c1.color.b + c2.color.b) / 2 * 255),
-         a: (c1.color.a + c2.color.a) / 2
-       };
+       // Calculate interpolated color
+       const r = Math.floor((c1.color.r + c2.color.r) / 2 * 255);
+       const g = Math.floor((c1.color.g + c2.color.g) / 2 * 255);
+       const b = Math.floor((c1.color.b + c2.color.b) / 2 * 255);
+       const a = (c1.color.a + c2.color.a) / 2;
        
-       // Get boundary points
-       // Use evaluateEnvelopeAt. 
-       // Note: For skinning, we should strictly use the tangent points we found, 
-       // but recalculating here keeps code simpler and is consistent with 'Analytical' mode.
+       // Get boundary points using envelope evaluation
        const e1 = this.evaluateEnvelopeAt(c1.t || 0);
        const e2 = this.evaluateEnvelopeAt(c2.t || 0);
        
-       // 2 Triangles or 1 Quad
+       // Create points string with toFixed(2) to keep the SVG string size manageable
        const points = [
-         `${e1.left.x},${e1.left.y}`,
-         `${e2.left.x},${e2.left.y}`,
-         `${e2.right.x},${e2.right.y}`,
-         `${e1.right.x},${e1.right.y}`
+         `${e1.left.x.toFixed(2)},${e1.left.y.toFixed(2)}`,
+         `${e2.left.x.toFixed(2)},${e2.left.y.toFixed(2)}`,
+         `${e2.right.x.toFixed(2)},${e2.right.y.toFixed(2)}`,
+         `${e1.right.x.toFixed(2)},${e1.right.y.toFixed(2)}`
        ].join(" ");
        
-       const colorStr = `rgba(${midColor.r},${midColor.g},${midColor.b},${midColor.a})`;
-       mesh.push(`<polygon points="${points}" fill="${colorStr}" stroke="none" />`);
+       const colorStr = `rgba(${r},${g},${b},${a.toFixed(3)})`;
+       
+       // Add stroke with matching color to prevent anti-aliasing hairlines between segments
+       mesh.push(`<polygon points="${points}" fill="${colorStr}" stroke="${colorStr}" stroke-width="0.5" />`);
     }
     
     return mesh;
+  }
+
+  /**
+   * Generate a colored SVG string using mesh rendering.
+   * This method automatically enables tessellation to create variable-color polygons.
+   * @param {Object} options - Rendering options
+   * @param {string} options.method - Rendering method ('analytical', 'skinning', or 'simple')
+   * @param {number} options.tolerance - Tolerance for adaptive sampling
+   * @param {boolean} options.drawOutline - Whether to draw the outline path on top
+   * @returns {string} SVG string containing the colored mesh
+   */
+  getColoredSVG(options = {}) {
+    const res = this.render({ 
+        method: options.method || 'analytical', 
+        tessellate: true, 
+        tolerance: options.tolerance || 0.5
+    });
+    
+    // Combine all polygons into one group string
+    const meshGroup = `<g class="variable-width-mesh">${res.mesh.join('')}</g>`;
+    
+    // Optional: Add the outline on top if requested
+    let outlinePath = "";
+    if (options.drawOutline) {
+        outlinePath = `<path d="${res.outlinePath}" fill="none" stroke="black" stroke-width="1" />`;
+    }
+
+    return meshGroup + outlinePath;
   }
 
   // Legacy support for sampleCurveAdaptive
