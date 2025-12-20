@@ -362,9 +362,13 @@ class DiskBSpline {
     if (method === 'simple') {
       // Original simple perpendicular-normal approach
       outlinePath = this.generateSimpleOutlinePath(circles);
+    } else if (method === 'skinning') {
+      // Skinning mode: tangent lines + arcs (Kruppa et al.)
+      // Uses sparse circles from iterative refinement
+      outlinePath = this.generateSkinningPath(circles);
     } else {
-      // Analytical envelope or skinning tangents
-      outlinePath = this.generateOutlinePath(circles, method === 'skinning');
+      // Analytical envelope
+      outlinePath = this.generateOutlinePath(circles, false);
     }
 
     // Also return skeleton path for debug
@@ -386,19 +390,90 @@ class DiskBSpline {
   }
 
   /**
-   * Main Skinning Algorithm (Kruppa et al.)
-   * Returns a dense list of admissible circles that approximate the envelope.
-   * Uses the same adaptive sampling as the simple method for smooth skeleton,
-   * then detects and bridges cusps during path generation.
+   * Skinning Algorithm (Kruppa et al. Section 4)
+   * Returns a list of admissible circles that approximate the DBSC envelope.
+   * 
+   * Algorithm:
+   * 1. Start with circles at knot positions + midpoints (for better initial coverage)
+   * 2. Iteratively refine by inserting midpoints where error > tolerance
+   * 3. Skip inadmissible circles to bridge cusps
    */
   generateSkinningCircles(tolerance) {
     if (this.controlDisks.length < this.degree + 1) return [];
 
-    // Use the same adaptive sampling as sampleCurveAdaptive for smooth skeleton
-    // Cusp handling will be done in generateSkinningPath via tangent line connections
-    const circles = this.sampleCurveAdaptive();
+    const startU = this.knots[this.degree];
+    const endU = this.knots[this.controlDisks.length];
     
-    this.logMessage(`Skinning generated ${circles.length} circles`);
+    // 1. Initial circles at knot positions AND midpoints between knots
+    let knotParams = [];
+    for (let i = this.degree; i <= this.controlDisks.length; i++) {
+      knotParams.push(this.knots[i]);
+    }
+    // Remove duplicates and sort
+    knotParams = [...new Set(knotParams)].sort((a, b) => a - b);
+    
+    // Add midpoints between knots for better initial coverage
+    let initialParams = [];
+    for (let i = 0; i < knotParams.length; i++) {
+      initialParams.push(knotParams[i]);
+      if (i < knotParams.length - 1) {
+        initialParams.push((knotParams[i] + knotParams[i + 1]) / 2);
+      }
+    }
+    
+    let circles = initialParams.map(t => ({ t, ...this.evaluateAt(t) }));
+    this.logMessage(`Skinning: starting with ${circles.length} initial circles`);
+    
+    // 2. Iterative refinement with tighter tolerance
+    // Use smaller tolerance for smoother curves
+    const effectiveTolerance = tolerance * 0.5; // Tighter tolerance
+    let refined = true;
+    let iterations = 0;
+    const maxIterations = 10;
+    
+    while (refined && iterations < maxIterations) {
+      refined = false;
+      iterations++;
+      const newCircles = [circles[0]];
+      
+      for (let i = 0; i < circles.length - 1; i++) {
+        const c1 = circles[i];
+        const c2 = circles[i + 1];
+        
+        // Check error at midpoint
+        const midT = (c1.t + c2.t) / 2;
+        const midCircle = { t: midT, ...this.evaluateAt(midT) };
+        
+        // Measure error: distance from true envelope to skin segment
+        const error = this.measureSkinError(c1, c2, midT);
+        
+        // Also check geometric distance between circles
+        const dx = c2.center.x - c1.center.x;
+        const dy = c2.center.y - c1.center.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const avgRadius = (c1.radius + c2.radius) / 2;
+        
+        // Refine if error too high OR circles too far apart relative to their size
+        const needsRefinement = error > effectiveTolerance || dist > avgRadius * 3;
+        
+        if (needsRefinement) {
+          // Check admissibility before inserting
+          if (this.isAdmissible(c1, midCircle, c2)) {
+            newCircles.push(midCircle);
+            refined = true;
+          } else {
+            // Inadmissible - this is a cusp region, don't insert
+            this.logMessage(`Cusp at t=${midT.toFixed(3)}, bridging`);
+          }
+        }
+        
+        newCircles.push(c2);
+      }
+      
+      circles = newCircles;
+    }
+    
+    this.logMessage(`Skinning: ${circles.length} circles after ${iterations} refinement iterations`);
     
     return circles;
   }
@@ -787,14 +862,14 @@ class DiskBSpline {
         const nextSeg = segments[i+1];
         const circle = circles[i+1];
         
-        // Calculate arc from current left2 to next left1 (both on circle i+1)
-        const arcSweep = this.calculateArcSweep(
-          seg.leftAngle2, 
-          nextSeg.leftAngle1, 
-          true // left side goes counterclockwise
-        );
+        // Check distance between tangent points
+        const dx = nextSeg.left1.x - seg.left2.x;
+        const dy = nextSeg.left1.y - seg.left2.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
         
-        if (Math.abs(arcSweep) > 0.01) { // Only add arc if angle is significant
+        // Only draw arc if points are far enough apart (> 5% of circle radius)
+        if (dist > circle.radius * 0.05) {
+          const arcSweep = this.calculateArcSweep(seg.leftAngle2, nextSeg.leftAngle1, true);
           const largeArc = Math.abs(arcSweep) > Math.PI ? 1 : 0;
           const sweepFlag = arcSweep > 0 ? 1 : 0;
           d += ` A ${circle.radius} ${circle.radius} 0 ${largeArc} ${sweepFlag} ${nextSeg.left1.x} ${nextSeg.left1.y}`;
@@ -826,14 +901,14 @@ class DiskBSpline {
         const prevSeg = segments[i-1];
         const circle = circles[i];
         
-        // Calculate arc from current right1 to previous right2 (both on circle i)
-        const arcSweep = this.calculateArcSweep(
-          seg.rightAngle1,
-          prevSeg.rightAngle2,
-          false // right side goes clockwise
-        );
+        // Check distance between tangent points
+        const dx = prevSeg.right2.x - seg.right1.x;
+        const dy = prevSeg.right2.y - seg.right1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
         
-        if (Math.abs(arcSweep) > 0.01) {
+        // Only draw arc if points are far enough apart (> 5% of circle radius)
+        if (dist > circle.radius * 0.05) {
+          const arcSweep = this.calculateArcSweep(seg.rightAngle1, prevSeg.rightAngle2, false);
           const largeArc = Math.abs(arcSweep) > Math.PI ? 1 : 0;
           const sweepFlag = arcSweep > 0 ? 1 : 0;
           d += ` A ${circle.radius} ${circle.radius} 0 ${largeArc} ${sweepFlag} ${prevSeg.right2.x} ${prevSeg.right2.y}`;
