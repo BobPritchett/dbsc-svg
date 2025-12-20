@@ -58,13 +58,15 @@ class DiskBSpline {
   logMessage(message) {
     if (!this.debug) return;
     const logElement = typeof document !== 'undefined' ? document.getElementById("log") : null;
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-US', { hour12: true }) + '.' + String(now.getMilliseconds()).padStart(3, '0');
     if (logElement) {
       const logEntry = document.createElement("div");
-      logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logEntry.textContent = `[${timeStr}] ${message}`;
       logElement.appendChild(logEntry);
       logElement.scrollTop = logElement.scrollHeight;
     }
-    console.log(message);
+    console.log(`[${timeStr}] ${message}`);
   }
 
   addDisk(disk) {
@@ -338,30 +340,39 @@ class DiskBSpline {
   // ==========================================
 
   render(options = {}) {
+    const renderStartTime = performance.now();
+    
     const method = options.method || 'analytical';
     const tessellate = options.tessellate || false;
     const tolerance = options.tolerance || 0.5;
 
-    this.logMessage(`Rendering with method: ${method}, tessellate: ${tessellate}`);
+    this.logMessage(`=== RENDER START: method=${method}, tessellate=${tessellate}, tolerance=${tolerance} ===`);
+    this.logMessage(`Control disks: ${this.controlDisks.length}, degree: ${this.degree}, closed: ${this.closed}`);
 
     let circles = [];
 
     if (method === 'skinning') {
       circles = this.generateSkinningCircles(tolerance);
-      this.logMessage(`Skinning generated ${circles.length} circles`);
+      this.logMessage(`Skinning generated ${circles.length} circles total`);
     } else {
       // Analytical or simple sampling
       circles = this.sampleCurveAdaptive();
       this.logMessage(`Adaptive sampling generated ${circles.length} points`);
     }
 
+    const meshStartTime = performance.now();
     const mesh = tessellate ? this.generateMesh(circles) : [];
+    if (tessellate) {
+      this.logMessage(`Mesh generation: ${mesh.length} polygons in ${(performance.now() - meshStartTime).toFixed(2)}ms`);
+    }
     
     // Choose outline generation method
+    const outlineStartTime = performance.now();
     let outlinePath;
     if (method === 'simple') {
       // Original simple perpendicular-normal approach
       outlinePath = this.generateSimpleOutlinePath(circles);
+      this.logMessage(`Simple outline path generated in ${(performance.now() - outlineStartTime).toFixed(2)}ms`);
     } else if (method === 'skinning') {
       // Skinning mode: tangent lines + arcs (Kruppa et al.)
       // Uses sparse circles from iterative refinement
@@ -369,6 +380,7 @@ class DiskBSpline {
     } else {
       // Analytical envelope
       outlinePath = this.generateOutlinePath(circles, false);
+      this.logMessage(`Analytical outline path generated in ${(performance.now() - outlineStartTime).toFixed(2)}ms`);
     }
 
     // Also return skeleton path for debug
@@ -380,6 +392,10 @@ class DiskBSpline {
       const pointsStr = centerPoints.map(pt => `(${pt.x.toFixed(1)},${pt.y.toFixed(1)})`).join(' ');
       this.logMessage(`Skeleton path (${centerPoints.length} pts): ${pointsStr}`);
     }
+
+    const renderEndTime = performance.now();
+    const totalTime = renderEndTime - renderStartTime;
+    this.logMessage(`=== RENDER COMPLETE: total time ${totalTime.toFixed(2)}ms ===`);
 
     return {
       outlinePath,
@@ -393,87 +409,141 @@ class DiskBSpline {
    * Skinning Algorithm (Kruppa et al. Section 4)
    * Returns a list of admissible circles that approximate the DBSC envelope.
    * 
-   * Algorithm:
-   * 1. Start with circles at knot positions + midpoints (for better initial coverage)
-   * 2. Iteratively refine by inserting midpoints where error > tolerance
-   * 3. Skip inadmissible circles to bridge cusps
+   * Uses dense sampling with admissibility check for cusp bridging.
+   * With dense circles, tangent lines alone approximate the skin well.
    */
   generateSkinningCircles(tolerance) {
+    const skinningStartTime = performance.now();
+    
     if (this.controlDisks.length < this.degree + 1) return [];
 
     const startU = this.knots[this.degree];
     const endU = this.knots[this.controlDisks.length];
+    const paramRange = endU - startU;
     
-    // 1. Initial circles at knot positions AND midpoints between knots
-    let knotParams = [];
-    for (let i = this.degree; i <= this.controlDisks.length; i++) {
-      knotParams.push(this.knots[i]);
-    }
-    // Remove duplicates and sort
-    knotParams = [...new Set(knotParams)].sort((a, b) => a - b);
+    // Use dense uniform sampling (similar to sampleCurveAdaptive)
+    const numSamples = Math.max(100, this.controlDisks.length * 25);
+    const paramStep = paramRange / (numSamples - 1);
     
-    // Add midpoints between knots for better initial coverage
-    let initialParams = [];
-    for (let i = 0; i < knotParams.length; i++) {
-      initialParams.push(knotParams[i]);
-      if (i < knotParams.length - 1) {
-        initialParams.push((knotParams[i] + knotParams[i + 1]) / 2);
-      }
+    this.logMessage(`Skinning: parameter range [${startU.toFixed(4)}, ${endU.toFixed(4)}], step=${paramStep.toFixed(6)}`);
+    
+    let allCircles = [];
+    for (let i = 0; i < numSamples; i++) {
+      const t = startU + (i / (numSamples - 1)) * paramRange;
+      allCircles.push({ t, ...this.evaluateAt(t) });
     }
     
-    let circles = initialParams.map(t => ({ t, ...this.evaluateAt(t) }));
-    this.logMessage(`Skinning: starting with ${circles.length} initial circles`);
+    this.logMessage(`Skinning: ${numSamples} initial uniform samples generated`);
     
-    // 2. Iterative refinement with tighter tolerance
-    // Use smaller tolerance for smoother curves
-    const effectiveTolerance = tolerance * 0.5; // Tighter tolerance
-    let refined = true;
-    let iterations = 0;
-    const maxIterations = 10;
+    // Log sample distribution details
+    const radii = allCircles.map(c => c.radius);
+    const minRadius = Math.min(...radii);
+    const maxRadius = Math.max(...radii);
+    const avgRadius = radii.reduce((a, b) => a + b, 0) / radii.length;
+    this.logMessage(`Skinning: radius range [${minRadius.toFixed(2)}, ${maxRadius.toFixed(2)}], avg=${avgRadius.toFixed(2)}`);
     
-    while (refined && iterations < maxIterations) {
-      refined = false;
-      iterations++;
-      const newCircles = [circles[0]];
+    // Filter out inadmissible circles (cusp bridging)
+    // Using the paper's condition: cusp when |r'(t)| >= |C'(t)|
+    const circles = [];
+    let cuspCount = 0;
+    let cuspRanges = []; // Track ranges where cusps were detected
+    let currentCuspStart = null;
+    let loggedCusps = 0;
+    const maxLoggedCusps = 5; // Only log first few cusp detections in detail
+    
+    for (let i = 0; i < allCircles.length; i++) {
+      const curr = allCircles[i];
       
-      for (let i = 0; i < circles.length - 1; i++) {
-        const c1 = circles[i];
-        const c2 = circles[i + 1];
-        
-        // Check error at midpoint
-        const midT = (c1.t + c2.t) / 2;
-        const midCircle = { t: midT, ...this.evaluateAt(midT) };
-        
-        // Measure error: distance from true envelope to skin segment
-        const error = this.measureSkinError(c1, c2, midT);
-        
-        // Also check geometric distance between circles
-        const dx = c2.center.x - c1.center.x;
-        const dy = c2.center.y - c1.center.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const avgRadius = (c1.radius + c2.radius) / 2;
-        
-        // Refine if error too high OR circles too far apart relative to their size
-        const needsRefinement = error > effectiveTolerance || dist > avgRadius * 3;
-        
-        if (needsRefinement) {
-          // Check admissibility before inserting
-          if (this.isAdmissible(c1, midCircle, c2)) {
-            newCircles.push(midCircle);
-            refined = true;
-          } else {
-            // Inadmissible - this is a cusp region, don't insert
-            this.logMessage(`Cusp at t=${midT.toFixed(3)}, bridging`);
+      // Check admissibility using the paper's derivative condition
+      const shouldLogDetails = (currentCuspStart === null && loggedCusps < maxLoggedCusps);
+      const admissible = this.isAdmissibleAt(curr.t, false);
+      
+      if (admissible) {
+        circles.push(curr);
+        if (currentCuspStart !== null) {
+          // End of cusp range
+          const rangeCircleCount = cuspCount - (cuspRanges.length > 0 ? cuspRanges.reduce((a, r) => a + r.skipped, 0) : 0);
+          cuspRanges.push({ 
+            start: currentCuspStart, 
+            end: allCircles[i - 1].t, 
+            skipped: rangeCircleCount
+          });
+          currentCuspStart = null;
+        }
+      } else {
+        if (currentCuspStart === null) {
+          currentCuspStart = curr.t;
+          // Log the first detection of this cusp range
+          if (loggedCusps < maxLoggedCusps) {
+            this.logMessage(`  Cusp detected at i=${i}, t=${curr.t.toFixed(4)}`);
+            this.logMessage(`    circle: (${curr.center.x.toFixed(1)},${curr.center.y.toFixed(1)}) r=${curr.radius.toFixed(2)}`);
+            // Run with logging to see derivative values
+            this.isAdmissibleAt(curr.t, true);
+            loggedCusps++;
           }
         }
-        
-        newCircles.push(c2);
+        cuspCount++;
       }
-      
-      circles = newCircles;
     }
     
-    this.logMessage(`Skinning: ${circles.length} circles after ${iterations} refinement iterations`);
+    // Close any open cusp range
+    if (currentCuspStart !== null) {
+      const rangeCircleCount = cuspCount - (cuspRanges.length > 0 ? cuspRanges.reduce((a, r) => a + r.skipped, 0) : 0);
+      cuspRanges.push({ 
+        start: currentCuspStart, 
+        end: allCircles[allCircles.length - 1].t, 
+        skipped: rangeCircleCount
+      });
+    }
+    
+    // Log cusp details
+    if (cuspCount > 0) {
+      this.logMessage(`Skinning: bridged ${cuspCount} cusp circles total in ${cuspRanges.length} range(s)`);
+      for (let ri = 0; ri < cuspRanges.length; ri++) {
+        const range = cuspRanges[ri];
+        const paramSpan = range.end - range.start;
+        this.logMessage(`  Range ${ri + 1}: t=[${range.start.toFixed(4)}, ${range.end.toFixed(4)}] span=${paramSpan.toFixed(4)}, skipped=${range.skipped} circles`);
+      }
+    } else {
+      this.logMessage(`Skinning: no cusps detected, all ${numSamples} circles admissible`);
+    }
+    
+    // Ensure we have at least start and end circles
+    if (circles.length === 0) {
+      this.logMessage(`Skinning: WARNING - all circles filtered out! Adding endpoints.`);
+      circles.push(allCircles[0]);
+      circles.push(allCircles[allCircles.length - 1]);
+    } else if (circles.length === 1) {
+      // Make sure we have at least 2 circles
+      if (circles[0].t < (startU + endU) / 2) {
+        circles.push(allCircles[allCircles.length - 1]);
+      } else {
+        circles.unshift(allCircles[0]);
+      }
+    }
+    
+    // Log final circle distribution
+    const finalRadii = circles.map(c => c.radius);
+    const finalMinR = Math.min(...finalRadii);
+    const finalMaxR = Math.max(...finalRadii);
+    this.logMessage(`Skinning: ${circles.length} circles after filtering (kept ${(circles.length / numSamples * 100).toFixed(1)}%)`);
+    this.logMessage(`Skinning: final radius range [${finalMinR.toFixed(2)}, ${finalMaxR.toFixed(2)}]`);
+    
+    // Log spacing between consecutive circles
+    let minDist = Infinity, maxDist = 0, totalDist = 0;
+    for (let i = 0; i < circles.length - 1; i++) {
+      const dx = circles[i + 1].center.x - circles[i].center.x;
+      const dy = circles[i + 1].center.y - circles[i].center.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      minDist = Math.min(minDist, dist);
+      maxDist = Math.max(maxDist, dist);
+      totalDist += dist;
+    }
+    const avgDist = totalDist / (circles.length - 1);
+    this.logMessage(`Skinning: circle spacing min=${minDist.toFixed(2)}, max=${maxDist.toFixed(2)}, avg=${avgDist.toFixed(2)}`);
+    
+    const skinningEndTime = performance.now();
+    this.logMessage(`Skinning: circle generation completed in ${(skinningEndTime - skinningStartTime).toFixed(2)}ms`);
     
     return circles;
   }
@@ -486,12 +556,9 @@ class DiskBSpline {
     const midCircle = { t: midT, ...this.evaluateAt(midT) };
 
     // 1. Admissibility Check (Cusp Detection)
-    // If adding this circle creates a configuration that is "inside" the others,
-    // it indicates a self-intersection loop.
-    // Simplification: Check if midCircle is largely contained in the skin of c1-c2?
-    // Proper check: Radical center.
-    if (!this.isAdmissible(c1, midCircle, c2)) {
-      // If not admissible, we DO NOT insert it. 
+    // Using the paper's condition: cusp when |r'(t)| >= |C'(t)|
+    if (!this.isAdmissibleAt(midT)) {
+      // If not admissible (cusp), we DO NOT insert it. 
       // This effectively bridges the cusp.
       return [];
     }
@@ -510,46 +577,27 @@ class DiskBSpline {
     return [];
   }
 
-  isAdmissible(c1, c2, c3) {
-    // Calculate Radical Center P of three circles
-    // If P is inside any circle, then the sequence loops back on itself.
-    // Power of P wrt circle = d^2 - r^2. If < 0, inside.
+  /**
+   * Check if a circle at parameter t is admissible (no cusp).
+   * From Kruppa et al.: A cusp occurs when |r'(t)| >= |C'(t)|
+   * i.e., when the radius changes faster than the center moves.
+   */
+  isAdmissibleAt(t, logDetails = false) {
+    const deriv = this.evaluateDerivativeAt(t);
+    const velocity = Math.sqrt(deriv.x * deriv.x + deriv.y * deriv.y);
+    const radiusRate = Math.abs(deriv.radiusRate);
     
-    // Simplification for stability:
-    // Just check if the middle circle is "swallowed" by the others or vice versa?
-    // No, standard admissibility is about the boundary order.
+    // Cusp occurs when radius changes faster than (or equal to) center velocity
+    // We use a small margin to avoid numerical issues at exact equality
+    const margin = 0.01; // Small tolerance
+    const admissible = radiusRate < velocity * (1 - margin);
     
-    // Let's implement the radical center check.
-    // Line 1 (Radical axis of 1 & 2): 2x(x2-x1) + 2y(y2-y1) = r1^2 - r2^2 + x2^2 + y2^2 - x1^2 - y1^2
-    // A1x + B1y = C1
-    
-    function getRadicalLine(ca, cb) {
-       const A = 2 * (cb.center.x - ca.center.x);
-       const B = 2 * (cb.center.y - ca.center.y);
-       const C = (ca.radius*ca.radius - cb.radius*cb.radius) + 
-                 (cb.center.x*cb.center.x + cb.center.y*cb.center.y) - 
-                 (ca.center.x*ca.center.x + ca.center.y*ca.center.y);
-       return { A, B, C };
+    if (logDetails) {
+      const ratio = velocity > 0 ? radiusRate / velocity : Infinity;
+      this.logMessage(`  Admissibility at t=${t.toFixed(4)}: |C'|=${velocity.toFixed(3)}, |r'|=${radiusRate.toFixed(3)}, ratio=${ratio.toFixed(3)}, result=${admissible ? 'ADMISSIBLE' : 'CUSP'}`);
     }
     
-    const L1 = getRadicalLine(c1, c2);
-    const L2 = getRadicalLine(c2, c3);
-    
-    // Intersection
-    const det = L1.A * L2.B - L2.A * L1.B;
-    if (Math.abs(det) < 1e-9) return true; // Parallel axes (concentric centers?) assume valid
-    
-    const px = (L2.B * L1.C - L1.B * L2.C) / det;
-    const py = (L1.A * L2.C - L2.A * L1.C) / det;
-    
-    // Check power
-    // We only need to check one circle as power is equal for all 3 at radical center
-    const d2 = (px - c1.center.x)**2 + (py - c1.center.y)**2;
-    const r2 = c1.radius * c1.radius;
-    
-    // If d2 < r2, the radical center is inside the circles -> Inadmissible (loop)
-    // We add a small epsilon for stability
-    return (d2 - r2) >= -1e-4; 
+    return admissible;
   }
 
   measureSkinError(c1, c2, midT) {
@@ -808,124 +856,102 @@ class DiskBSpline {
   }
 
   /**
-   * Generate proper skinning path with tangent lines AND circular arcs.
-   * According to Kruppa et al., the skin consists of:
-   * 1. External tangent line segments between consecutive circles
-   * 2. Circular arcs on each circle connecting tangent touch points
+   * Generate skinning path using external tangent lines between circles.
+   * With dense sampling, tangent lines alone approximate the skin well.
+   * Only arcs are at the end caps.
    */
   generateSkinningPath(circles) {
+    const pathStartTime = performance.now();
+    
     if (circles.length < 2) return "";
 
-    // Compute all tangent segments first
-    const segments = [];
+    // Collect all tangent points
+    let leftPoints = [];
+    let rightPoints = [];
+    let tangentFailures = 0;
+    let tangentDetails = [];
+    
     for (let i = 0; i < circles.length - 1; i++) {
-      const tans = this.getCircleTangents(circles[i], circles[i+1]);
+      const c1 = circles[i];
+      const c2 = circles[i+1];
+      const tans = this.getCircleTangents(c1, c2);
+      
       if (tans) {
-        segments.push({
-          circle1: circles[i],
-          circle2: circles[i+1],
-          left1: tans.left1,
-          left2: tans.left2,
-          right1: tans.right1,
-          right2: tans.right2,
-          // Store angles for arc computation
-          leftAngle1: Math.atan2(tans.left1.y - circles[i].center.y, tans.left1.x - circles[i].center.x),
-          leftAngle2: Math.atan2(tans.left2.y - circles[i+1].center.y, tans.left2.x - circles[i+1].center.x),
-          rightAngle1: Math.atan2(tans.right1.y - circles[i].center.y, tans.right1.x - circles[i].center.x),
-          rightAngle2: Math.atan2(tans.right2.y - circles[i+1].center.y, tans.right2.x - circles[i+1].center.x),
-        });
+        // Use the tangent touch point on circle i for the left/right sides
+        if (i === 0) {
+          leftPoints.push(tans.left1);
+          rightPoints.push(tans.right1);
+        }
+        // Always add the tangent touch point on circle i+1
+        leftPoints.push(tans.left2);
+        rightPoints.push(tans.right2);
+        
+        // Log tangent angle for debugging
+        if (this.debug && (i < 3 || i >= circles.length - 4)) {
+          const dx = c2.center.x - c1.center.x;
+          const dy = c2.center.y - c1.center.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+          tangentDetails.push(`seg${i}: dist=${dist.toFixed(2)}, angle=${angle.toFixed(1)}°, r1=${c1.radius.toFixed(2)}, r2=${c2.radius.toFixed(2)}`);
+        }
       } else {
-        // Fallback: circles overlap, skip this segment
-        segments.push(null);
+        tangentFailures++;
+        this.logMessage(`Skinning path: tangent failed at segment ${i} (circle contains other)`);
       }
     }
+    
+    this.logMessage(`Skinning path: ${leftPoints.length} tangent points from ${circles.length} circles (${tangentFailures} failures)`);
+    
+    if (tangentDetails.length > 0) {
+      this.logMessage(`Skinning path tangent samples: ${tangentDetails.slice(0, 3).join('; ')}...${tangentDetails.slice(-3).join('; ')}`);
+    }
+    
+    if (leftPoints.length < 2) return "";
 
     let d = "";
+    let lineCount = 0;
+    let arcCount = 0;
     
-    // === LEFT SIDE (forward) ===
-    // Start at first tangent point
-    if (segments[0]) {
-      d = `M ${segments[0].left1.x} ${segments[0].left1.y}`;
-    } else {
-      d = `M ${circles[0].center.x} ${circles[0].center.y}`;
+    // Start at first left point
+    d = `M ${leftPoints[0].x} ${leftPoints[0].y}`;
+    
+    // Trace left side with lines
+    for (let i = 1; i < leftPoints.length; i++) {
+      d += ` L ${leftPoints[i].x} ${leftPoints[i].y}`;
+      lineCount++;
     }
-
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      if (!seg) continue;
-
-      // Draw tangent line to circle i+1
-      d += ` L ${seg.left2.x} ${seg.left2.y}`;
-
-      // If there's a next segment, draw arc on circle i+1 to connect to next tangent
-      if (i < segments.length - 1 && segments[i+1]) {
-        const nextSeg = segments[i+1];
-        const circle = circles[i+1];
-        
-        // Check distance between tangent points
-        const dx = nextSeg.left1.x - seg.left2.x;
-        const dy = nextSeg.left1.y - seg.left2.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        // Only draw arc if points are far enough apart (> 5% of circle radius)
-        if (dist > circle.radius * 0.05) {
-          const arcSweep = this.calculateArcSweep(seg.leftAngle2, nextSeg.leftAngle1, true);
-          const largeArc = Math.abs(arcSweep) > Math.PI ? 1 : 0;
-          const sweepFlag = arcSweep > 0 ? 1 : 0;
-          d += ` A ${circle.radius} ${circle.radius} 0 ${largeArc} ${sweepFlag} ${nextSeg.left1.x} ${nextSeg.left1.y}`;
-        }
-      }
-    }
-
-    // === END CAP ===
+    
+    // End cap (semicircle)
     const lastCircle = circles[circles.length - 1];
-    const lastSeg = segments[segments.length - 1];
+    if (!this.closed && lastCircle.radius > 0) {
+      const lastLeft = leftPoints[leftPoints.length - 1];
+      const lastRight = rightPoints[rightPoints.length - 1];
+      d += ` A ${lastCircle.radius} ${lastCircle.radius} 0 1 0 ${lastRight.x} ${lastRight.y}`;
+      arcCount++;
+    } else {
+      d += ` L ${rightPoints[rightPoints.length - 1].x} ${rightPoints[rightPoints.length - 1].y}`;
+      lineCount++;
+    }
     
-    if (!this.closed && lastCircle.radius > 0 && lastSeg) {
-      // Semicircular end cap from left2 to right2
-      d += ` A ${lastCircle.radius} ${lastCircle.radius} 0 1 0 ${lastSeg.right2.x} ${lastSeg.right2.y}`;
-    } else if (lastSeg) {
-      d += ` L ${lastSeg.right2.x} ${lastSeg.right2.y}`;
+    // Trace right side backward with lines
+    for (let i = rightPoints.length - 2; i >= 0; i--) {
+      d += ` L ${rightPoints[i].x} ${rightPoints[i].y}`;
+      lineCount++;
     }
-
-    // === RIGHT SIDE (backward) ===
-    for (let i = segments.length - 1; i >= 0; i--) {
-      const seg = segments[i];
-      if (!seg) continue;
-
-      // Draw tangent line back to circle i
-      d += ` L ${seg.right1.x} ${seg.right1.y}`;
-
-      // If there's a previous segment, draw arc on circle i to connect to previous tangent
-      if (i > 0 && segments[i-1]) {
-        const prevSeg = segments[i-1];
-        const circle = circles[i];
-        
-        // Check distance between tangent points
-        const dx = prevSeg.right2.x - seg.right1.x;
-        const dy = prevSeg.right2.y - seg.right1.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        // Only draw arc if points are far enough apart (> 5% of circle radius)
-        if (dist > circle.radius * 0.05) {
-          const arcSweep = this.calculateArcSweep(seg.rightAngle1, prevSeg.rightAngle2, false);
-          const largeArc = Math.abs(arcSweep) > Math.PI ? 1 : 0;
-          const sweepFlag = arcSweep > 0 ? 1 : 0;
-          d += ` A ${circle.radius} ${circle.radius} 0 ${largeArc} ${sweepFlag} ${prevSeg.right2.x} ${prevSeg.right2.y}`;
-        }
-      }
-    }
-
-    // === START CAP ===
+    
+    // Start cap (semicircle)
     const firstCircle = circles[0];
-    const firstSeg = segments[0];
-    
-    if (!this.closed && firstCircle.radius > 0 && firstSeg) {
-      // Semicircular start cap from right1 back to left1
-      d += ` A ${firstCircle.radius} ${firstCircle.radius} 0 1 0 ${firstSeg.left1.x} ${firstSeg.left1.y}`;
+    if (!this.closed && firstCircle.radius > 0) {
+      d += ` A ${firstCircle.radius} ${firstCircle.radius} 0 1 0 ${leftPoints[0].x} ${leftPoints[0].y}`;
+      arcCount++;
     }
-
+    
     d += " Z";
+    
+    const pathEndTime = performance.now();
+    this.logMessage(`Skinning path: ${lineCount} L commands, ${arcCount} A commands, path length=${d.length} chars`);
+    this.logMessage(`Skinning path: generation completed in ${(pathEndTime - pathStartTime).toFixed(2)}ms`);
+    
     return d;
   }
 
