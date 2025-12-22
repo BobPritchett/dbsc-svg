@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fixed B-Spline Processor</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; background: #f4f4f4; }
+        canvas { display: block; touch-action: none; background: white; cursor: crosshair; }
+        #ui { position: absolute; top: 20px; left: 20px; bottom: 20px; width: 340px; display: flex; flex-direction: column; pointer-events: none; }
+        .panel { pointer-events: auto; background: rgba(255, 255, 255, 0.96); border-radius: 12px; padding: 16px; margin-bottom: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05); backdrop-filter: blur(10px); flex-shrink: 0; }
+        h2 { margin: 0 0 10px 0; font-size: 13px; font-weight: 700; color: #111; text-transform: uppercase; letter-spacing: 0.5px; }
+        .toggle-group { display: flex; gap: 6px; margin-bottom: 12px; }
+        .toggle-btn { flex: 1; padding: 6px; border: 1px solid #ddd; background: #fff; border-radius: 6px; font-size: 11px; font-weight: 600; color: #555; cursor: pointer; text-align: center; }
+        .toggle-btn.active { background: #007AFF; color: white; border-color: #007AFF; }
+        .control-group { margin-bottom: 10px; }
+        .label-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px; color: #555; font-weight: 500; }
+        .val { font-family: 'Menlo', monospace; color: #007AFF; font-size: 11px; }
+        input[type="range"] { width: 100%; cursor: pointer; accent-color: #007AFF; }
+        button#btn-clear { width: 100%; padding: 10px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px; background: #E5E5EA; color: #333; }
+        #data-log-area { flex-grow: 1; display: flex; flex-direction: column; min-height: 0; pointer-events: none; }
+        .log-pane { display: none; flex-direction: column; flex: 1; min-height: 0; margin-bottom: 8px; pointer-events: auto; }
+        .log-pane.visible { display: flex; }
+        .log-pane h3 { font-size: 10px; color: #888; margin: 0 0 4px 4px; text-transform: uppercase; }
+        textarea { width: 100%; height: 100%; box-sizing: border-box; font-family: 'Menlo', monospace; font-size: 10px; border: 1px solid #ddd; border-radius: 4px; padding: 8px; resize: none; background: #fafafa; }
+        .checkbox-row { display: flex; gap: 15px; margin-top: 10px; font-size: 11px; color: #666; }
+        .checkbox-row label { display: flex; align-items: center; cursor: pointer; }
+        .checkbox-row input { margin-right: 5px; }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <div class="panel">
+        <h2>Visibility</h2>
+        <div class="toggle-group">
+            <button class="toggle-btn active" id="tog-raw">Raw</button>
+            <button class="toggle-btn active" id="tog-red">Red</button>
+            <button class="toggle-btn active" id="tog-ctl">Ctl</button>
+        </div>
+        <h2>Parameters</h2>
+        <div class="control-group">
+            <div class="label-row"><label>RDP Tolerance</label><span class="val" id="disp-eps">2.0 px</span></div>
+            <input type="range" id="param-eps" min="0.5" max="15" step="0.5" value="2.0">
+        </div>
+        <div class="control-group">
+            <div class="label-row"><label>Pressure Weight</label><span class="val" id="disp-p">1000</span></div>
+            <input type="range" id="param-p" min="0" max="2000" step="100" value="1000">
+        </div>
+        <div class="control-group">
+            <div class="label-row"><label>Max Stroke Width</label><span class="val" id="disp-maxw">30 px</span></div>
+            <input type="range" id="param-maxw" min="1" max="60" step="1" value="30">
+        </div>
+        <div class="control-group">
+            <div class="label-row"><label>Adaptive CPs (Auto)</label><span class="val" id="disp-cp">-</span></div>
+        </div>
+        <button id="btn-clear">Clear Canvas</button>
+        <div class="checkbox-row">
+            <label><input type="checkbox" id="chk-debug"> Debug Data</label>
+            <label><input type="checkbox" id="chk-export"> Export Data</label>
+        </div>
+    </div>
+    <div id="data-log-area">
+        <div class="log-pane" id="pane-debug">
+            <h3>Coordinate Debug</h3>
+            <textarea id="log-debug" readonly></textarea>
+        </div>
+        <div class="log-pane" id="pane-export">
+            <h3>SVG & DBSC Export</h3>
+            <textarea id="log-export" readonly></textarea>
+        </div>
+    </div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script src="./pen-input-utils.js"></script>
+<script src="./pen-input-ui.js"></script>
+</body>
+</html>
