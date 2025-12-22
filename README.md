@@ -136,6 +136,13 @@ This implementation leverages computational geometry to extend traditional B-Spl
   _Keywords_: splines, 2D displays, animation, geometry  
   _Summary_: Presents a skeleton-based approach using disk B-spline curves for parametric 2D region representation, enhancing computational modeling of shapes.
 
+- **[A skinning technique for modeling artistic disk B-spline shapes](https://www.sciencedirect.com/science/article/pii/S0097849323001255)**
+  _Authors_: Kinga Kruppa, Roland Kunkli, Miklós Hoffmann
+  _Published_: Computers & Graphics, 2023, vol. 115, pp. 96–106
+  _Publisher_: Elsevier
+  _Keywords_: skinning, disk B-spline, artistic curves, self-intersection
+  _Summary_: Proposes a skinning technique using tangent lines and circular arcs to handle self-intersections and cusps in disk B-spline curves.
+
 ## How It Works
 
 1. **Control Disks**: Each disk has a center point and radius
