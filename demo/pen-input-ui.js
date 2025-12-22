@@ -5,7 +5,15 @@
     throw new Error("Missing window.PenInputUtils. Load pen-input-utils.js before pen-input-ui.js");
   }
 
-  const { simplifyRDP3D, fitBSpline, evalS, getSVGPath, getDBSCArray } = u;
+  const {
+    simplifyRDP3D,
+    fitBSpline,
+    evalS,
+    getSVGPath,
+    getDBSCArray,
+    computeMaxDistanceErrorXY,
+    formatPointList,
+  } = u;
 
   /** App Logic **/
   const canvas = document.getElementById("canvas");
@@ -29,15 +37,15 @@
     logDebug: document.getElementById("log-debug"),
     logExport: document.getElementById("log-export"),
     togRaw: document.getElementById("tog-raw"),
-    togRed: document.getElementById("tog-red"),
-    togCtl: document.getElementById("tog-ctl"),
+    togReduced: document.getElementById("tog-reduced"),
+    togCurve: document.getElementById("tog-curve"),
     chkDebug: document.getElementById("chk-debug"),
     chkExport: document.getElementById("chk-export"),
     paneDebug: document.getElementById("pane-debug"),
     paneExport: document.getElementById("pane-export"),
   };
 
-  const state = { raw: true, red: true, ctl: true };
+  const state = { raw: true, reduced: true, curve: true };
 
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
@@ -112,7 +120,7 @@
 
     if (state.raw && rawPoints.length) {
       ctx.save();
-      ctx.globalAlpha = 0.25;
+      ctx.globalAlpha = 0.15;
       ctx.strokeStyle = "#000";
       ctx.lineWidth = 1 * dpr;
       rawPoints.forEach((p) => {
@@ -124,20 +132,19 @@
       ctx.restore();
     }
 
-    if (state.red && rdpPoints.length) {
+    if (state.reduced && rdpPoints.length) {
       ctx.save();
-      // Connect RDP points with dashed lines (visualize simplification result)
-      ctx.globalAlpha = 0.5;
-      ctx.strokeStyle = "#007AFF";
-      ctx.lineWidth = 1 * dpr;
-      ctx.setLineDash([5 * dpr, 5 * dpr]);
+      // Connect reduced (RDP) points with a 2px green line @ 0.15 opacity
+      ctx.globalAlpha = 0.15;
+      ctx.strokeStyle = "#33c31e";
+      ctx.lineWidth = 2 * dpr;
+      ctx.setLineDash([]);
       ctx.beginPath();
       rdpPoints.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
       ctx.stroke();
 
-      // Draw RDP points with radius based on pressure + max stroke width
-      ctx.setLineDash([]);
-      ctx.fillStyle = "#007AFF";
+      // Draw reduced points as unstroked green circles @ 0.15 opacity
+      ctx.fillStyle = "#33c31e";
       rdpPoints.forEach((p) => {
         ctx.beginPath();
         ctx.arc(p.x, p.y, (strokeWidthCssPx(p.p) / 2) * dpr, 0, Math.PI * 2);
@@ -146,9 +153,9 @@
       ctx.restore();
     }
 
-    if (spline) {
+    if (spline && state.curve) {
       ctx.save();
-      ctx.strokeStyle = "rgba(255, 0, 0, 0.25)";
+      ctx.strokeStyle = "rgba(255, 0, 0, 0.5)";
       ctx.lineWidth = 2 * dpr;
       ctx.stroke(new Path2D(getSVGPath(spline)));
       ctx.restore();
@@ -166,15 +173,16 @@
         ctx.stroke();
       }
 
-      if (state.ctl) {
-        ctx.save();
-        // Control point markers only (no connecting green polyline)
-        spline.controlPoints.forEach((p, i) => {
-          ctx.fillStyle = i === 0 || i === spline.controlPoints.length - 1 ? "#007AFF" : "#33c31e";
-          ctx.fillRect(p.x - 3 * dpr, p.y - 3 * dpr, 6 * dpr, 6 * dpr);
-        });
-        ctx.restore();
-      }
+      ctx.save();
+      // Control points as solid red circles
+      ctx.fillStyle = "#ff3b30";
+      const r = 4 * dpr;
+      spline.controlPoints.forEach((p) => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
     }
   }
 
@@ -182,21 +190,44 @@
     if (rawPoints.length < 2) return;
 
     rdpPoints = simplifyRDP3D(rawPoints, parseFloat(ui.eps.value) * dpr, parseFloat(ui.p.value));
-    let adaptiveCPs =
-      rdpPoints.length <= 10 ? rdpPoints.length + 2 : Math.floor(10 + (rdpPoints.length - 10) * 0.6);
-    adaptiveCPs = Math.max(4, Math.min(adaptiveCPs, 50));
-    ui.dCp.textContent = adaptiveCPs;
+    // Choose control point count by iterating until the maximum point-to-curve deviation
+    // drops below a target. This mirrors the "iterative approximation" approach in
+    // spline-curve-fitting, but kept lightweight for this demo.
+    const targetErr = Math.max(0.5 * dpr, parseFloat(ui.eps.value) * dpr);
+    const minCPs = Math.max(4, Math.min(8, rdpPoints.length));
+    const maxCPs = Math.max(minCPs, Math.min(50, rdpPoints.length));
 
-    spline = fitBSpline(rdpPoints, adaptiveCPs, 3);
+    let bestSpline = null;
+    let bestErr = Infinity;
+    let chosenCPs = minCPs;
+
+    for (let cpCount = minCPs; cpCount <= maxCPs; cpCount++) {
+      const s = fitBSpline(rdpPoints, cpCount, 3);
+      if (!s) continue;
+      const err = computeMaxDistanceErrorXY(s, rdpPoints, s.params);
+      if (err < bestErr) {
+        bestErr = err;
+        bestSpline = s;
+        chosenCPs = cpCount;
+      }
+      if (err <= targetErr) break; // early-exit once we're good enough
+    }
+
+    spline = bestSpline;
+    ui.dCp.textContent = chosenCPs;
 
     if (spline) {
-      let debug = `--- RAW INPUT (${rawPoints.length}) ---\n`;
-      rawPoints.slice(0, 30).forEach((p, i) => (debug += `${i}: {x:${p.x.toFixed(1)}, y:${p.y.toFixed(1)}, p:${p.p.toFixed(2)}}\n`));
-      debug += `\n--- CONTROL POINTS (${spline.controlPoints.length}) ---\n`;
-      spline.controlPoints.forEach(
-        (p, i) => (debug += `${i}: {x:${p.x.toFixed(1)}, y:${p.y.toFixed(1)}, p:${p.p.toFixed(2)}}\n`),
-      );
-      ui.logDebug.value = debug;
+      const fmt = typeof formatPointList === "function" ? formatPointList : null;
+      let debug = "";
+      debug += `--- RAW POINTS (${rawPoints.length}) ---\n`;
+      debug += fmt ? fmt(rawPoints) : rawPoints.map((p, i) => `${i}: {x:${p.x.toFixed(1)}, y:${p.y.toFixed(1)}, p:${p.p.toFixed(2)}}`).join("\n");
+      debug += `\n\n--- REDUCED POINTS (RDP) (${rdpPoints.length}) ---\n`;
+      debug += fmt ? fmt(rdpPoints) : rdpPoints.map((p, i) => `${i}: {x:${p.x.toFixed(1)}, y:${p.y.toFixed(1)}, p:${p.p.toFixed(2)}}`).join("\n");
+      debug += `\n\n--- CONTROL POINTS (${spline.controlPoints.length}) ---\n`;
+      debug += fmt
+        ? fmt(spline.controlPoints)
+        : spline.controlPoints.map((p, i) => `${i}: {x:${p.x.toFixed(1)}, y:${p.y.toFixed(1)}, p:${p.p.toFixed(2)}}`).join("\n");
+      ui.logDebug.value = debug + "\n";
       updateExport();
     }
 
@@ -208,14 +239,14 @@
     ui.togRaw.classList.toggle("active");
     draw();
   };
-  ui.togRed.onclick = () => {
-    state.red = !state.red;
-    ui.togRed.classList.toggle("active");
+  ui.togReduced.onclick = () => {
+    state.reduced = !state.reduced;
+    ui.togReduced.classList.toggle("active");
     draw();
   };
-  ui.togCtl.onclick = () => {
-    state.ctl = !state.ctl;
-    ui.togCtl.classList.toggle("active");
+  ui.togCurve.onclick = () => {
+    state.curve = !state.curve;
+    ui.togCurve.classList.toggle("active");
     draw();
   };
   ui.eps.oninput = () => {
