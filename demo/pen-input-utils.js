@@ -255,8 +255,13 @@ function fitBSpline(dataPoints, numCPs, degree = 3) {
   const n = dataPoints.length - 1; // data points count - 1 (vendor uses n)
   if (n < degree) return null;
 
-  const h = Math.min(Math.max(numCPs, degree + 1), dataPoints.length) - 1; // control points count - 1
+  // Cap h so that we always have significantly more data rows than CP columns.
+  // When h is close to n, the normal-equation matrix (NTN) becomes nearly singular
+  // and produces wild outliers. Requiring h <= 0.75 * n ensures a well-overdetermined system.
+  const maxH = Math.max(degree + 1, Math.floor(n * 0.75));
+  const h = Math.min(Math.max(numCPs, degree + 1) - 1, maxH); // control points count - 1
   if (h < degree) return null;
+
   if (h >= n) {
     // If we're not reducing points, do a safer interpolation-ish fallback by using the points as CPs.
     // (Still build a reasonable knot vector for evaluation.)
@@ -343,13 +348,14 @@ function fitBSpline(dataPoints, numCPs, degree = 3) {
   }
   const rangeX = Number.isFinite(maxX - minX) ? maxX - minX : 0;
   const rangeY = Number.isFinite(maxY - minY) ? maxY - minY : 0;
-  // Margin was previously too permissive and allowed unstable outliers to slip through.
-  // Keep this generous enough for smoothing overshoot, but not "multiple screens".
-  const margin = Math.max(30, 1.5 * Math.max(rangeX, rangeY));
-  const boundMinX = minX - margin,
-    boundMaxX = maxX + margin;
-  const boundMinY = minY - margin,
-    boundMaxY = maxY + margin;
+  // Use dimension-specific margins so a wide stroke doesn't get an absurd y-margin (or vice versa).
+  // 0.25× the range accommodates normal B-spline overshoot without letting outliers through.
+  const marginX = Math.max(20, 0.25 * rangeX);
+  const marginY = Math.max(20, 0.25 * rangeY);
+  const boundMinX = minX - marginX,
+    boundMaxX = maxX + marginX;
+  const boundMinY = minY - marginY,
+    boundMaxY = maxY + marginY;
 
   const isReasonableCP = (cp) =>
     Number.isFinite(cp?.x) &&
