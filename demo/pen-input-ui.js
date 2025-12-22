@@ -30,8 +30,10 @@
     eps: document.getElementById("param-eps"),
     p: document.getElementById("param-p"),
     maxW: document.getElementById("param-maxw"),
+    fit: document.getElementById("param-fit"),
     dEps: document.getElementById("disp-eps"),
     dP: document.getElementById("disp-p"),
+    dFit: document.getElementById("disp-fit"),
     dMaxW: document.getElementById("disp-maxw"),
     dCp: document.getElementById("disp-cp"),
     logDebug: document.getElementById("log-debug"),
@@ -193,7 +195,7 @@
     // Choose control point count by iterating until the maximum point-to-curve deviation
     // drops below a target. This mirrors the "iterative approximation" approach in
     // spline-curve-fitting, but kept lightweight for this demo.
-    const targetErr = Math.max(0.5 * dpr, parseFloat(ui.eps.value) * dpr);
+    const targetErr = Math.max(0.5 * dpr, parseFloat(ui.fit.value) * dpr);
     const minCPs = Math.max(4, Math.min(8, rdpPoints.length));
     const maxCPs = Math.max(minCPs, Math.min(50, rdpPoints.length));
 
@@ -257,6 +259,10 @@
     ui.dP.textContent = ui.p.value;
     process();
   };
+  ui.fit.oninput = () => {
+    ui.dFit.textContent = ui.fit.value + " px";
+    process();
+  };
   ui.maxW.oninput = () => {
     ui.dMaxW.textContent = ui.maxW.value + " px";
     updateExport();
@@ -272,6 +278,7 @@
   ui.chkExport.onchange = () => ui.paneExport.classList.toggle("visible", ui.chkExport.checked);
 
   // Initialize parameter readouts
+  ui.dFit.textContent = ui.fit.value + " px";
   ui.dMaxW.textContent = ui.maxW.value + " px";
 })();
 
