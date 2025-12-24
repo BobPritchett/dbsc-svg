@@ -426,10 +426,25 @@ function getDBSCArray(spline, maxStrokeWidthPx = 30) {
   if (!spline) return "";
   const maxW = Math.max(1, maxStrokeWidthPx);
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
-  return spline.controlPoints
+
+  // Calculate bounding box
+  const cps = spline.controlPoints;
+  let minX = Infinity, minY = Infinity;
+  for (const cp of cps) {
+    if (cp.x < minX) minX = cp.x;
+    if (cp.y < minY) minY = cp.y;
+  }
+
+  // Offset so that min x and min y are at 10
+  const offsetX = 10 - minX;
+  const offsetY = 10 - minY;
+
+  return cps
     .map((cp) => {
       const w = 1 + clamp01(cp.p) * (maxW - 1);
-      return `${cp.x.toFixed(1)},${cp.y.toFixed(1)},${w.toFixed(2)}`;
+      const x = cp.x + offsetX;
+      const y = cp.y + offsetY;
+      return `${x.toFixed(1)},${y.toFixed(1)},${w.toFixed(2)}`;
     })
     .join("\n");
 }
