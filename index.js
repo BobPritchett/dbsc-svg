@@ -998,7 +998,7 @@ class DiskBSpline {
     // Build quads between consecutive circles (using their envelope/tangent points)
     // For skinning, we should ideally use the tangent points evaluated during the process
     // But evaluating envelope at the circle's 't' is a good approximation if dense.
-    
+
     for (let i = 0; i < circles.length - 1; i++) {
        const c1 = circles[i];
        const c2 = circles[i+1];

@@ -986,7 +986,7 @@
                   const firstEnv = bspline.evaluateEnvelopeAt(firstCircle.t || 0);
                   const lastEnv = bspline.evaluateEnvelopeAt(lastCircle.t || 0);
                   
-                  // Convert colors from 0-1 range to 0-255 for SVG
+                  // Use the circle colors at the sampled endpoints (these are what the mesh is based on)
                   const firstColor = firstCircle.color || { r: 0, g: 0, b: 0, a: 1 };
                   const lastColor = lastCircle.color || { r: 0, g: 0, b: 0, a: 1 };
                   
@@ -1004,20 +1004,41 @@
                   
                   // Create semicircle paths for start and end caps
                   if (firstCircle.radius > 0) {
-                      // Start cap: semicircle from right to left, then close through center
-                      const startDeriv = bspline.evaluateDerivativeAt(firstCircle.t || 0);
-                      const startSweep = (startDeriv.x * (firstEnv.left.y - firstEnv.right.y) - startDeriv.y * (firstEnv.left.x - firstEnv.right.x)) < 0 ? 1 : 0;
-                      // Path: right point -> arc to left point -> line to center -> close
-                      const startCapPath = `M ${firstEnv.right.x.toFixed(2)} ${firstEnv.right.y.toFixed(2)} A ${firstCircle.radius.toFixed(2)} ${firstCircle.radius.toFixed(2)} 0 0 ${startSweep} ${firstEnv.left.x.toFixed(2)} ${firstEnv.left.y.toFixed(2)} L ${firstCircle.center.x.toFixed(2)} ${firstCircle.center.y.toFixed(2)} Z`;
+                      // IMPORTANT: don't draw a pie slice (no "L center").
+                      // We want the circular *segment* bounded by the arc + the chord between left/right.
+                      // Analytical mode uses fixed arc flags (matches DiskBSpline.generateOutlinePath).
+                      // Skinning mode uses derivative-based sweep (matches DiskBSpline.generateSkinningPath).
+                      let startArc = "";
+                      if (renderMethod === "skinning") {
+                        const startDeriv = bspline.evaluateDerivativeAt(firstCircle.t || 0);
+                        const startSweep =
+                          (startDeriv.x * (firstEnv.left.y - firstEnv.right.y) -
+                            startDeriv.y * (firstEnv.left.x - firstEnv.right.x)) < 0
+                            ? 1
+                            : 0;
+                        startArc = `A ${firstCircle.radius.toFixed(2)} ${firstCircle.radius.toFixed(2)} 0 0 ${startSweep} ${firstEnv.left.x.toFixed(2)} ${firstEnv.left.y.toFixed(2)}`;
+                      } else {
+                        // Matches generateOutlinePath end/start caps: A r r 0 1 0 ...
+                        startArc = `A ${firstCircle.radius.toFixed(2)} ${firstCircle.radius.toFixed(2)} 0 1 0 ${firstEnv.left.x.toFixed(2)} ${firstEnv.left.y.toFixed(2)}`;
+                      }
+                      const startCapPath = `M ${firstEnv.right.x.toFixed(2)} ${firstEnv.right.y.toFixed(2)} ${startArc} Z`;
                       fillContent += `<path d="${startCapPath}" fill="${firstColorStr}" stroke="${firstColorStr}" stroke-width="0.5" />`;
                   }
                   
                   if (lastCircle.radius > 0) {
-                      // End cap: semicircle from left to right, then close through center
-                      const lastDeriv = bspline.evaluateDerivativeAt(lastCircle.t || 0);
-                      const endSweep = (lastDeriv.x * (lastEnv.right.y - lastEnv.left.y) - lastDeriv.y * (lastEnv.right.x - lastEnv.left.x)) > 0 ? 1 : 0;
-                      // Path: left point -> arc to right point -> line to center -> close
-                      const endCapPath = `M ${lastEnv.left.x.toFixed(2)} ${lastEnv.left.y.toFixed(2)} A ${lastCircle.radius.toFixed(2)} ${lastCircle.radius.toFixed(2)} 0 0 ${endSweep} ${lastEnv.right.x.toFixed(2)} ${lastEnv.right.y.toFixed(2)} L ${lastCircle.center.x.toFixed(2)} ${lastCircle.center.y.toFixed(2)} Z`;
+                      let endArc = "";
+                      if (renderMethod === "skinning") {
+                        const lastDeriv = bspline.evaluateDerivativeAt(lastCircle.t || 0);
+                        const endSweep =
+                          (lastDeriv.x * (lastEnv.right.y - lastEnv.left.y) -
+                            lastDeriv.y * (lastEnv.right.x - lastEnv.left.x)) > 0
+                            ? 1
+                            : 0;
+                        endArc = `A ${lastCircle.radius.toFixed(2)} ${lastCircle.radius.toFixed(2)} 0 0 ${endSweep} ${lastEnv.right.x.toFixed(2)} ${lastEnv.right.y.toFixed(2)}`;
+                      } else {
+                        endArc = `A ${lastCircle.radius.toFixed(2)} ${lastCircle.radius.toFixed(2)} 0 1 0 ${lastEnv.right.x.toFixed(2)} ${lastEnv.right.y.toFixed(2)}`;
+                      }
+                      const endCapPath = `M ${lastEnv.left.x.toFixed(2)} ${lastEnv.left.y.toFixed(2)} ${endArc} Z`;
                       fillContent += `<path d="${endCapPath}" fill="${lastColorStr}" stroke="${lastColorStr}" stroke-width="0.5" />`;
                   }
               }
