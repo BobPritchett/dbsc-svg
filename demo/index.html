@@ -118,6 +118,12 @@
       .move {
         cursor: move !important;
       }
+      .ew-resize {
+        cursor: ew-resize !important;
+      }
+      .move {
+        cursor: move !important;
+      }
       select {
         padding: 8px;
         font-size: 14px;
@@ -1098,18 +1104,65 @@
           }
         }
 
-        // Add hover effects (same as before)
-        const radiusHandles = visualDiv.querySelectorAll(".radius-handle");
-        radiusHandles.forEach((handle) => {
-          handle.addEventListener("mouseenter", () => { visualArea.classList.add("grab"); });
-          handle.addEventListener("mouseleave", () => { if (!window.draggingRadiusHandle) visualArea.classList.remove("grab"); });
-        });
+        // Add hover effects using proximity detection
+        // This ensures the correct cursor shows even when handles overlap
+        const updateHoverCursor = (event) => {
+          if (window.isDragging || window.draggingRadiusHandle || window.draggingCenterPoint) {
+            return; // Don't change cursor while dragging
+          }
+          
+          const svg = visualArea.querySelector("svg");
+          if (!svg) return;
 
-        const centerPoints = visualDiv.querySelectorAll(".center-point");
-        centerPoints.forEach((point) => {
-          point.addEventListener("mouseenter", () => { visualArea.classList.add("move"); });
-          point.addEventListener("mouseleave", () => { if (!window.draggingCenterPoint) visualArea.classList.remove("move"); });
-        });
+          const rect = svg.getBoundingClientRect();
+          const scaleX = 400 / rect.width;
+          const scaleY = 200 / rect.height;
+          const mouseX = Math.round((event.clientX - rect.left) * scaleX);
+          const mouseY = Math.round((event.clientY - rect.top) * scaleY);
+
+          const controlDisks = getControlDisks();
+          const centerHitRadius = 8;
+          const handleHitRadius = 8;
+          
+          let closestType = null;
+          let closestDistance = Infinity;
+          
+          for (let i = 0; i < controlDisks.length; i++) {
+            const disk = controlDisks[i];
+            
+            // Check center point
+            const centerDx = mouseX - disk.center.x;
+            const centerDy = mouseY - disk.center.y;
+            const centerDist = Math.sqrt(centerDx * centerDx + centerDy * centerDy);
+            
+            if (centerDist <= centerHitRadius && centerDist < closestDistance) {
+              closestType = 'center';
+              closestDistance = centerDist;
+            }
+            
+            // Check radius handle
+            const handleX = disk.center.x + disk.radius;
+            const handleY = disk.center.y;
+            const handleDx = mouseX - handleX;
+            const handleDy = mouseY - handleY;
+            const handleDist = Math.sqrt(handleDx * handleDx + handleDy * handleDy);
+            
+            if (handleDist <= handleHitRadius && handleDist < closestDistance) {
+              closestType = 'radius';
+              closestDistance = handleDist;
+            }
+          }
+          
+          // Update cursor based on what's closest
+          visualArea.classList.remove("grab", "move", "ew-resize");
+          if (closestType === 'center') {
+            visualArea.classList.add("move");
+          } else if (closestType === 'radius') {
+            visualArea.classList.add("ew-resize");
+          }
+        };
+        
+        visualArea.addEventListener("mousemove", updateHoverCursor);
       }
 
       // Initialize the demo
@@ -1244,54 +1297,88 @@
           const clickX = Math.round((event.clientX - rect.left) * scaleX);
           const clickY = Math.round((event.clientY - rect.top) * scaleY);
 
-          // Check if we clicked on a center point
+          // Find the closest handle (center or radius) to the click point
           const controlDisks = getControlDisks();
+          // Increased hit area to 8 pixels for easier grabbing
+          const centerHitRadius = 8;
+          const handleHitRadius = 8;
+          
+          let closestType = null; // 'center' or 'radius'
+          let closestIndex = -1;
+          let closestDistance = Infinity;
+          
+          // Check all center points and radius handles, track the closest one
           for (let i = 0; i < controlDisks.length; i++) {
             const disk = controlDisks[i];
-            const centerRadius = visualOptions.controlDisks.dotSize;
-
-            if (
-              isPointInCircle(
-                { x: clickX, y: clickY },
-                { x: disk.center.x, y: disk.center.y },
-                centerRadius
-              )
-            ) {
-              window.draggingCenterPoint = true;
-              window.draggingCenterIndex = i;
-              window.startX = clickX;
-              window.startY = clickY;
-              visualArea.classList.add("no-select");
-              visualArea.classList.add("grabbing");
-              return;
+            
+            // Check center point
+            const centerDx = clickX - disk.center.x;
+            const centerDy = clickY - disk.center.y;
+            const centerDist = Math.sqrt(centerDx * centerDx + centerDy * centerDy);
+            
+            if (centerDist <= centerHitRadius && centerDist < closestDistance) {
+              closestType = 'center';
+              closestIndex = i;
+              closestDistance = centerDist;
             }
-          }
-
-          // Check if we clicked on a radius handle
-          for (let i = 0; i < controlDisks.length; i++) {
-            const disk = controlDisks[i];
+            
+            // Check radius handle
             const handleX = disk.center.x + disk.radius;
             const handleY = disk.center.y;
-            const handleRadius = visualOptions.controlDisks.dotSize / 2;
+            const handleDx = clickX - handleX;
+            const handleDy = clickY - handleY;
+            const handleDist = Math.sqrt(handleDx * handleDx + handleDy * handleDy);
+            
+            if (handleDist <= handleHitRadius && handleDist < closestDistance) {
+              closestType = 'radius';
+              closestIndex = i;
+              closestDistance = handleDist;
+            }
+          }
+          
+          // If we found a handle, use the closest one
+          if (closestType === 'center') {
+            window.draggingCenterPoint = true;
+            window.draggingCenterIndex = closestIndex;
+            window.startX = clickX;
+            window.startY = clickY;
+            visualArea.classList.add("no-select");
+            visualArea.classList.add("grabbing");
+            return;
+          } else if (closestType === 'radius') {
+            window.draggingRadiusHandle = true;
+            window.draggingDiskIndex = closestIndex;
+            window.startX = clickX;
+            window.startY = clickY;
+            visualArea.classList.add("no-select");
+            visualArea.classList.add("grabbing");
+            return;
+          }
 
-            if (
-              isPointInCircle(
-                { x: clickX, y: clickY },
-                { x: handleX, y: handleY },
-                handleRadius
-              )
-            ) {
-              window.draggingRadiusHandle = true;
-              window.draggingDiskIndex = i;
-              window.startX = clickX;
-              window.startY = clickY;
-              visualArea.classList.add("no-select");
-              visualArea.classList.add("grabbing");
-              return;
+          // Check if click is within 8 pixels of any existing handle before creating new point
+          let tooCloseToHandle = false;
+          for (let i = 0; i < controlDisks.length; i++) {
+            const disk = controlDisks[i];
+            // Check center point
+            if (isPointInCircle({ x: clickX, y: clickY }, { x: disk.center.x, y: disk.center.y }, 8)) {
+              tooCloseToHandle = true;
+              break;
+            }
+            // Check radius handle
+            const handleX = disk.center.x + disk.radius;
+            const handleY = disk.center.y;
+            if (isPointInCircle({ x: clickX, y: clickY }, { x: handleX, y: handleY }, 8)) {
+              tooCloseToHandle = true;
+              break;
             }
           }
 
-          // If we didn't click a handle or center point, handle as normal point creation
+          // If we didn't click a handle or center point, and not too close to one, handle as normal point creation
+          if (tooCloseToHandle) {
+            // Too close to an existing handle, ignore the click
+            return;
+          }
+
           visualArea.classList.add("no-select");
           visualArea.classList.add("grabbing");
 
@@ -1405,17 +1492,17 @@
         };
 
         visualArea.addEventListener("mousedown", handleMouseDown);
-        visualArea.addEventListener("mousemove", handleMouseMove);
-        visualArea.addEventListener("mouseup", handleMouseUp);
+        // Add mousemove and mouseup to document so dragging continues outside the canvas area
+        document.addEventListener("mousemove", handleMouseMove);
+        document.addEventListener("mouseup", handleMouseUp);
+        
+        // Remove the mouseleave handler that was canceling drags
+        // Keep only the visual feedback cleanup for when not dragging
         visualArea.addEventListener("mouseleave", () => {
-          visualArea.classList.remove("no-select");
-          visualArea.classList.remove("grabbing");
-          window.isDragging = false;
-          window.draggingRadiusHandle = false;
-          window.draggingDiskIndex = -1;
-          window.draggingCenterPoint = false;
-          window.draggingCenterIndex = -1;
-          updateCurve();
+          // Only clean up cursor classes if we're not actively dragging
+          if (!window.isDragging && !window.draggingRadiusHandle && !window.draggingCenterPoint) {
+            visualArea.classList.remove("grab", "move", "ew-resize");
+          }
         });
 
         // Add event listeners for the toggle options

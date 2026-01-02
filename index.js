@@ -1193,7 +1193,7 @@ class DiskBSpline {
     }
 
     this.controlDisks.forEach((disk, index) => {
-      circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${disk.radius}" fill="none" stroke="${opts.lineColor}" stroke-dasharray="1,1" stroke-width="1" stroke-linecap="rounded" />`;
+      circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${disk.radius}" fill="none" stroke="${opts.lineColor}" stroke-dasharray="1,1" stroke-width="0.5" stroke-linecap="rounded" />`;
       circles += `<circle cx="${disk.center.x}" cy="${disk.center.y}" r="${opts.dotSize}" fill="${opts.centerColor}" data-index="${index}" data-type="center" />`;
       circles += `<circle cx="${disk.center.x + disk.radius}" cy="${disk.center.y}" r="${opts.dotSize / 2}" fill="blue" data-index="${index}" data-type="radius" />`;
       circles += `<text x="${disk.center.x + 5}" y="${disk.center.y - 5}" font-size="10" fill="${opts.textColor}">${Math.round(disk.radius)}</text>`;
