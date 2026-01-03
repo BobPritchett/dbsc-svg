@@ -8,6 +8,7 @@
 This open-source JavaScript library enables developers and designers to create smooth, variable-width strokes in SVG using Disk B-Spline Curves (DBSC), ideal for vector graphics, calligraphy, and animation.
 
 - [Interactive Disk B-Spline Curves Demo](https://bobpritchett.github.io/dbsc-svg/demo) - Try creating variable-width SVG strokes in real-time
+- [Variable width splines from stylus input](https://bobpritchett.github.io/dbsc-svg/demo/pen-input.html) - Draw with your mouse/stylus, auto-fit a spline, then edit disk centers + radii
 
 ## Overview
 
@@ -30,9 +31,10 @@ To create a new `DiskBSpline` instance, you need to provide an array of control 
 
 ```javascript
 const controlDisks = [
-  { center: { x: 50, y: 50 }, radius: 10 },
-  { center: { x: 100, y: 100 }, radius: 20 },
-  { center: { x: 150, y: 50 }, radius: 15 },
+  // color is optional (normalized RGBA, 0..1). If omitted, defaults to black.
+  { center: { x: 50, y: 50 }, radius: 10, color: { r: 1, g: 0, b: 0, a: 1 } },
+  { center: { x: 100, y: 100 }, radius: 20, color: { r: 0, g: 1, b: 0, a: 1 } },
+  { center: { x: 150, y: 50 }, radius: 15 }, // defaults to black
 ];
 
 // Create with default options (degree: 3, debug: false)
@@ -108,6 +110,16 @@ svg.appendChild(path);
 ### Example Usage in index.html
 
 Refer to the `index.html` file for more detailed examples of how to use the `DiskBSpline` class, including interactive examples where you can add control disks and visualize the resulting curve in real-time.
+
+### Optional per-disk color (used by mesh / "Color stroke")
+
+Each control disk may include an optional `color` field:
+
+- **Shape**: `{ r, g, b, a }`
+- **Range**: `r/g/b` are normalized floats in **0..1**, and `a` is **0..1**
+- **Default**: if omitted, `index.js` defaults the disk color to black `{ r: 0, g: 0, b: 0, a: 1 }`
+
+When you render with tessellation (e.g. the demo's “Color stroke”), the renderer interpolates disk colors along the stroke and fills the generated mesh polygons.
 
 ## Features
 
