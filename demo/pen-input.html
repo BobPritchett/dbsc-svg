@@ -37,6 +37,10 @@
             <button class="toggle-btn active" id="tog-reduced">Reduced</button>
             <button class="toggle-btn active" id="tog-curve">Curve</button>
         </div>
+        <div style="margin: 0 0 12px 0; font-size: 11px; color: #777; line-height: 1.35;">
+            When <b>Curve</b> is on (after you draw a stroke), drag the <b>red center dots</b> to move control disks,
+            or drag the <b>blue radius dots</b> to change disk radius.
+        </div>
         <h2>Parameters</h2>
         <div class="control-group">
             <div class="label-row"><label>RDP Tolerance</label><span class="val" id="disp-eps">2.0 px</span></div>
@@ -56,6 +60,11 @@
         </div>
         <div class="control-group">
             <div class="label-row"><label>Adaptive CPs (Auto)</label><span class="val" id="disp-cp">-</span></div>
+        </div>
+        <div class="checkbox-row" style="margin-top: 0;">
+            <label><input type="checkbox" id="chk-path-points" checked> Path points</label>
+            <label><input type="checkbox" id="chk-skinning"> Skinning</label>
+            <label><input type="checkbox" id="chk-color"> Color stroke</label>
         </div>
         <button id="btn-clear">Clear Canvas</button>
         <div class="checkbox-row">
@@ -77,6 +86,8 @@
 
 <canvas id="canvas"></canvas>
 
+<!-- Import the DiskBSpline library (for skinning + colored mesh rendering) -->
+<script src="../index.js"></script>
 <script src="./pen-input-utils.js"></script>
 <script src="./pen-input-ui.js"></script>
 </body>
