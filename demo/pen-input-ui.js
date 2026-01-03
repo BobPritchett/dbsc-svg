@@ -167,6 +167,208 @@
     return { points: pts, fill };
   }
 
+  // Parse an SVG path 'd' string and return anchor points (M/L/H/V/Z endpoints, and endpoints of C/S/Q/T/A).
+  // Control points for curves are ignored.
+  function parsePathAnchors(d) {
+    const anchors = [];
+    if (!d || typeof d !== "string") return anchors;
+
+    let i = 0;
+    const n = d.length;
+    let cmd = null;
+    let currX = 0;
+    let currY = 0;
+    let subpathStartX = 0;
+    let subpathStartY = 0;
+
+    const isCommand = (ch) => /[a-zA-Z]/.test(ch);
+    const skipSeparators = () => {
+      while (i < n) {
+        const ch = d[i];
+        if (ch === " " || ch === "\t" || ch === "\n" || ch === ",") i++;
+        else break;
+      }
+    };
+    const readNumber = () => {
+      skipSeparators();
+      const m = d
+        .slice(i)
+        .match(/^[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/);
+      if (!m) return null;
+      i += m[0].length;
+      skipSeparators();
+      return parseFloat(m[0]);
+    };
+
+    while (i < n) {
+      skipSeparators();
+      if (i >= n) break;
+      const ch = d[i];
+      if (isCommand(ch)) {
+        cmd = ch;
+        i++;
+      } else if (cmd == null) {
+        break;
+      }
+
+      const isRel = cmd === cmd.toLowerCase();
+      switch (cmd) {
+        case "M":
+        case "m": {
+          const x = readNumber();
+          const y = readNumber();
+          if (x == null || y == null) break;
+          const newX = isRel ? currX + x : x;
+          const newY = isRel ? currY + y : y;
+          currX = newX;
+          currY = newY;
+          subpathStartX = newX;
+          subpathStartY = newY;
+          anchors.push({ x: currX, y: currY });
+          // Subsequent pairs are implicit L
+          while (true) {
+            const nx = readNumber();
+            const ny = readNumber();
+            if (nx == null || ny == null) break;
+            const lx = isRel ? currX + nx : nx;
+            const ly = isRel ? currY + ny : ny;
+            currX = lx;
+            currY = ly;
+            anchors.push({ x: currX, y: currY });
+          }
+          break;
+        }
+        case "L":
+        case "l": {
+          while (true) {
+            const x = readNumber();
+            const y = readNumber();
+            if (x == null || y == null) break;
+            currX = isRel ? currX + x : x;
+            currY = isRel ? currY + y : y;
+            anchors.push({ x: currX, y: currY });
+          }
+          break;
+        }
+        case "H":
+        case "h": {
+          while (true) {
+            const x = readNumber();
+            if (x == null) break;
+            currX = isRel ? currX + x : x;
+            anchors.push({ x: currX, y: currY });
+          }
+          break;
+        }
+        case "V":
+        case "v": {
+          while (true) {
+            const y = readNumber();
+            if (y == null) break;
+            currY = isRel ? currY + y : y;
+            anchors.push({ x: currX, y: currY });
+          }
+          break;
+        }
+        case "C":
+        case "c": {
+          while (true) {
+            const x1 = readNumber();
+            const y1 = readNumber();
+            const x2 = readNumber();
+            const y2 = readNumber();
+            const x = readNumber();
+            const y = readNumber();
+            if (x1 == null || y1 == null || x2 == null || y2 == null || x == null || y == null) break;
+            const ex = isRel ? currX + x : x;
+            const ey = isRel ? currY + y : y;
+            currX = ex;
+            currY = ey;
+            anchors.push({ x: currX, y: currY });
+          }
+          break;
+        }
+        case "S":
+        case "s": {
+          while (true) {
+            const x2 = readNumber();
+            const y2 = readNumber();
+            const x = readNumber();
+            const y = readNumber();
+            if (x2 == null || y2 == null || x == null || y == null) break;
+            const ex = isRel ? currX + x : x;
+            const ey = isRel ? currY + y : y;
+            currX = ex;
+            currY = ey;
+            anchors.push({ x: currX, y: currY });
+          }
+          break;
+        }
+        case "Q":
+        case "q": {
+          while (true) {
+            const x1 = readNumber();
+            const y1 = readNumber();
+            const x = readNumber();
+            const y = readNumber();
+            if (x1 == null || y1 == null || x == null || y == null) break;
+            const ex = isRel ? currX + x : x;
+            const ey = isRel ? currY + y : y;
+            currX = ex;
+            currY = ey;
+            anchors.push({ x: currX, y: currY });
+          }
+          break;
+        }
+        case "T":
+        case "t": {
+          while (true) {
+            const x = readNumber();
+            const y = readNumber();
+            if (x == null || y == null) break;
+            const ex = isRel ? currX + x : x;
+            const ey = isRel ? currY + y : y;
+            currX = ex;
+            currY = ey;
+            anchors.push({ x: currX, y: currY });
+          }
+          break;
+        }
+        case "A":
+        case "a": {
+          while (true) {
+            const rx = readNumber();
+            const ry = readNumber();
+            const rot = readNumber();
+            const laf = readNumber();
+            const sf = readNumber();
+            const x = readNumber();
+            const y = readNumber();
+            if (rx == null || ry == null || rot == null || laf == null || sf == null || x == null || y == null) break;
+            const ex = isRel ? currX + x : x;
+            const ey = isRel ? currY + y : y;
+            currX = ex;
+            currY = ey;
+            anchors.push({ x: currX, y: currY });
+          }
+          break;
+        }
+        case "Z":
+        case "z": {
+          currX = subpathStartX;
+          currY = subpathStartY;
+          break;
+        }
+        default: {
+          i++;
+          break;
+        }
+      }
+    }
+
+    return anchors;
+  }
+
   function hitTestControlDiskHandle(pos) {
     // Returns { type: "center"|"radius", index } or null.
     if (!isCurveEditable()) return null;
@@ -418,6 +620,7 @@
       // Otherwise fall back to the lightweight variable-width stroke preview.
       const canDbsc = isDiskBSplineAvailable();
       let dbscCircles = null;
+      let dbscOutlinePath = null;
       if (canDbsc && (renderOpts.skinning || renderOpts.color)) {
         const disksPx = buildControlDisksPx();
         if (disksPx.length >= 4) {
@@ -426,6 +629,7 @@
             const method = renderOpts.skinning ? "skinning" : renderOpts.color ? "analytical" : "simple";
             const res = bs.render({ method, tessellate: renderOpts.color, tolerance: 0.5 });
             dbscCircles = Array.isArray(res.circles) ? res.circles : null;
+            dbscOutlinePath = typeof res.outlinePath === "string" ? res.outlinePath : null;
 
             if (renderOpts.color && Array.isArray(res.mesh) && res.mesh.length) {
               ctx.save();
@@ -472,29 +676,35 @@
         }
       }
 
-      // Path points: show sampled points (like demo/index.html's "Path Points", but on canvas).
+      // Path points: show points on the *outer outline path* (like demo/index.html's "Path Points").
       if (renderOpts.pathPoints) {
+        if (canDbsc && !dbscOutlinePath) {
+          // We still need an outline path even if Skinning/Color stroke are off.
+          const disksPx = buildControlDisksPx();
+          if (disksPx.length >= 4) {
+            try {
+              const bs = new window.DiskBSpline(disksPx, { degree: 3, debug: false, closed: false });
+              const method = renderOpts.skinning ? "skinning" : "analytical";
+              const res = bs.render({ method, tessellate: false, tolerance: 0.5 });
+              dbscOutlinePath = typeof res.outlinePath === "string" ? res.outlinePath : null;
+            } catch (_) {}
+          }
+        }
+
         ctx.save();
         ctx.fillStyle = "rgba(0,102,204,0.75)";
         const r = 1.5 * dpr;
-        if (dbscCircles && dbscCircles.length) {
-          const step = Math.max(1, Math.floor(dbscCircles.length / 80));
-          for (let i = 0; i < dbscCircles.length; i += step) {
-            const c = dbscCircles[i];
-            if (!c?.center) continue;
+        if (dbscOutlinePath) {
+          const anchors = parsePathAnchors(dbscOutlinePath);
+          const step = Math.max(1, Math.floor(anchors.length / 150));
+          for (let i = 0; i < anchors.length; i += step) {
+            const a = anchors[i];
             ctx.beginPath();
-            ctx.arc(c.center.x, c.center.y, r, 0, Math.PI * 2);
+            ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
             ctx.fill();
           }
         } else {
-          const samples = 120;
-          for (let i = 0; i <= samples; i++) {
-            const t = i / samples;
-            const p = evalS(t, spline);
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-            ctx.fill();
-          }
+          // If outline generation isn't available for some reason, do nothing (we don't want spine points here).
         }
         ctx.restore();
       }
