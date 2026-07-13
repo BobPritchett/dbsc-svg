@@ -2,46 +2,164 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Fixed B-Spline Processor</title>
+    <title>Variable-width splines from stylus input — Disk B-Spline demo</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; background: #f4f4f4; }
+        :root { --accent: #007AFF; --accent2: #FF3B30; --bg: #f4f4f4; }
+        body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; background: var(--bg); }
         canvas { display: block; touch-action: none; background: white; cursor: crosshair; }
-        #ui { position: absolute; top: 20px; left: 20px; bottom: 20px; width: 340px; display: flex; flex-direction: column; pointer-events: none; }
-        .panel { pointer-events: auto; background: rgba(255, 255, 255, 0.96); border-radius: 12px; padding: 16px; margin-bottom: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05); backdrop-filter: blur(10px); flex-shrink: 0; }
-        h2 { margin: 0 0 10px 0; font-size: 13px; font-weight: 700; color: #111; text-transform: uppercase; letter-spacing: 0.5px; }
-        .toggle-group { display: flex; gap: 6px; margin-bottom: 12px; }
-        .toggle-btn { flex: 1; padding: 6px; border: 1px solid #ddd; background: #fff; border-radius: 6px; font-size: 11px; font-weight: 600; color: #555; cursor: pointer; text-align: center; }
-        .toggle-btn.active { background: #007AFF; color: white; border-color: #007AFF; }
-        .control-group { margin-bottom: 10px; }
-        .label-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px; color: #555; font-weight: 500; }
-        .val { font-family: 'Menlo', monospace; color: #007AFF; font-size: 11px; }
-        input[type="range"] { width: 100%; cursor: pointer; accent-color: #007AFF; }
-        button#btn-clear { width: 100%; padding: 10px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px; background: #E5E5EA; color: #333; }
+
+        #ui { position: absolute; top: 20px; left: 20px; bottom: 20px; width: 360px;
+              display: flex; flex-direction: column; pointer-events: none; }
+
+        .panel {
+            pointer-events: auto;
+            background: rgba(255, 255, 255, 0.96);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid rgba(0,0,0,0.05);
+            backdrop-filter: blur(10px);
+            flex-shrink: 1;
+            overflow-y: auto;
+            max-height: 78vh;
+        }
+
+        h2 { margin: 0 0 8px 0; font-size: 11px; font-weight: 700; color: #111;
+             text-transform: uppercase; letter-spacing: 0.5px; }
+        h2.sub { margin-top: 14px; }
+
+        .toggle-group { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap; }
+        .toggle-btn { flex: 1 0 auto; padding: 5px 8px; border: 1px solid #ddd; background: #fff;
+                      border-radius: 6px; font-size: 11px; font-weight: 600; color: #555;
+                      cursor: pointer; text-align: center; }
+        .toggle-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+        .control-group { margin-bottom: 8px; }
+        .label-row { display: flex; justify-content: space-between; margin-bottom: 3px;
+                     font-size: 12px; color: #555; font-weight: 500; }
+        .val { font-family: 'Menlo', monospace; color: var(--accent); font-size: 11px; }
+        input[type="range"] { width: 100%; cursor: pointer; accent-color: var(--accent); }
+
+        .btn-row { display: flex; gap: 6px; margin-top: 6px; }
+        button.btn { flex: 1; padding: 7px 6px; border: none; border-radius: 6px; font-weight: 600;
+                     cursor: pointer; font-size: 11px; background: #E5E5EA; color: #333; }
+        button.btn.primary { background: var(--accent); color: white; }
+
+        select { width: 100%; padding: 6px; border-radius: 6px; border: 1px solid #ddd;
+                 font-size: 12px; background: #fff; }
+
+        .checkbox-row { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px;
+                        color: #666; margin-top: 4px; }
+        .checkbox-row label { display: flex; align-items: center; cursor: pointer; white-space: nowrap; }
+        .checkbox-row input { margin-right: 4px; }
+
+        .hint { font-size: 10px; color: #888; line-height: 1.35; margin: 8px 0 0; }
+
+        .badge { display: inline-block; padding: 1px 5px; background: #fff3cd; color: #856404;
+                 border: 1px solid #ffeeba; border-radius: 999px; font-size: 9px; font-weight: 700;
+                 margin-left: 4px; }
+        .badge.hidden { display: none; }
+
         #data-log-area { flex-grow: 1; display: flex; flex-direction: column; min-height: 0; pointer-events: none; }
-        .log-pane { display: none; flex-direction: column; flex: 1; min-height: 0; margin-bottom: 8px; pointer-events: auto; }
+        .log-pane { display: none; flex-direction: column; flex: 1; min-height: 120px; margin-bottom: 8px;
+                    pointer-events: auto; background: rgba(255,255,255,0.96); border-radius: 8px;
+                    padding: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05); }
         .log-pane.visible { display: flex; }
-        .log-pane h3 { font-size: 10px; color: #888; margin: 0 0 4px 4px; text-transform: uppercase; }
-        textarea { width: 100%; height: 100%; box-sizing: border-box; font-family: 'Menlo', monospace; font-size: 10px; border: 1px solid #ddd; border-radius: 4px; padding: 8px; resize: none; background: #fafafa; }
-        .checkbox-row { display: flex; gap: 15px; margin-top: 10px; font-size: 11px; color: #666; }
-        .checkbox-row label { display: flex; align-items: center; cursor: pointer; }
-        .checkbox-row input { margin-right: 5px; }
+        .log-pane-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .log-pane h3 { font-size: 10px; color: #666; margin: 0; text-transform: uppercase;
+                       font-weight: 700; letter-spacing: 0.5px; }
+        .log-pane .copy-btn { padding: 2px 6px; border-radius: 4px; border: 1px solid #ddd;
+                              background: #fff; font-size: 10px; font-weight: 600; color: #555; cursor: pointer; }
+        textarea { width: 100%; height: 100%; box-sizing: border-box; font-family: 'Menlo', monospace;
+                   font-size: 10px; border: 1px solid #ddd; border-radius: 4px; padding: 6px;
+                   resize: none; background: #fafafa; }
+
+        .svg-preview { width: 100%; flex: 1; border: 1px solid #ddd; border-radius: 4px;
+                       background: repeating-conic-gradient(#fff 0 25%, #f0f0f0 0 50%) 0 0/14px 14px; }
+        .svg-preview svg { width: 100%; height: 100%; }
+
+        #color-picker-popover {
+            position: absolute; z-index: 10; background: white; border-radius: 8px; padding: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2); border: 1px solid #ddd; display: none;
+            font-size: 11px; color: #333;
+        }
+        #color-picker-popover.visible { display: block; }
+        #color-picker-popover .cp-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+        #color-picker-popover button { padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd;
+                                       background: #fff; cursor: pointer; font-size: 11px; }
+        #color-picker-popover button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+
+        #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+                 padding: 8px 16px; background: rgba(0,0,0,0.8); color: white; border-radius: 6px;
+                 font-size: 12px; pointer-events: none; opacity: 0; transition: opacity 0.25s;
+                 z-index: 100; }
+        #toast.visible { opacity: 1; }
+
+        .method-legend { display: flex; gap: 8px; font-size: 10px; color: #666; margin-top: 2px; }
+        .method-legend span { display: inline-flex; align-items: center; gap: 3px; }
+        .method-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
     </style>
 </head>
 <body>
 
 <div id="ui">
     <div class="panel">
-        <h2>Visibility</h2>
+        <h2>Stroke</h2>
+        <div class="control-group">
+            <div class="label-row"><label>Preset</label></div>
+            <select id="preset-select">
+                <option value="">— Draw your own —</option>
+                <option value="calligraphic-s">Calligraphic S</option>
+                <option value="tight-loop">Tight loop (cusp)</option>
+                <option value="zero-tail">Zero-radius tail</option>
+                <option value="figure-eight">Figure-eight</option>
+                <option value="circle">Uniform circle</option>
+            </select>
+        </div>
+        <div class="btn-row">
+            <button class="btn" id="btn-clear">Clear all</button>
+            <button class="btn" id="btn-delete-last">Delete last</button>
+        </div>
+        <div class="btn-row">
+            <button class="btn primary" id="btn-download">Download SVG</button>
+            <button class="btn" id="btn-load">Load from export</button>
+        </div>
+
+        <h2 class="sub">Renderer</h2>
+        <div class="checkbox-row" style="margin-bottom:4px">
+            <label><input type="radio" name="method" value="simple"> Simple</label>
+            <label><input type="radio" name="method" value="analytical" checked> Analytical</label>
+            <label><input type="radio" name="method" value="skinning"> Skinning</label>
+        </div>
+        <div class="checkbox-row">
+            <label><input type="checkbox" id="chk-compare"> Compare overlay</label>
+            <label><input type="checkbox" id="chk-closed"> Closed</label>
+        </div>
+        <div class="method-legend" id="method-legend" style="display:none">
+            <span><i style="background:#888"></i>Simple</span>
+            <span><i style="background:#007AFF"></i>Analytical</span>
+            <span><i style="background:#FF3B30"></i>Skinning</span>
+        </div>
+        <div class="checkbox-row">
+            <label><input type="checkbox" id="chk-color" checked> Color stroke</label>
+            <label><input type="checkbox" id="chk-path-points" checked> Path points</label>
+        </div>
+
+        <h2 class="sub">Visibility</h2>
         <div class="toggle-group">
             <button class="toggle-btn active" id="tog-raw">Raw</button>
             <button class="toggle-btn active" id="tog-reduced">Reduced</button>
             <button class="toggle-btn active" id="tog-curve">Curve</button>
         </div>
-        <div style="margin: 0 0 12px 0; font-size: 11px; color: #777; line-height: 1.35;">
-            When <b>Curve</b> is on (after you draw a stroke), drag the <b>red center dots</b> to move control disks,
-            or drag the <b>blue radius dots</b> to change disk radius.
+        <div class="toggle-group">
+            <button class="toggle-btn" id="tog-skel">Skeleton</button>
+            <button class="toggle-btn" id="tog-norm">Normals</button>
+            <button class="toggle-btn active" id="tog-disks">Disks</button>
+            <button class="toggle-btn" id="tog-cusps">Cusps<span class="badge hidden" id="cusp-badge">0</span></button>
         </div>
-        <h2>Parameters</h2>
+
+        <h2 class="sub">Fit</h2>
         <div class="control-group">
             <div class="label-row"><label>RDP Tolerance</label><span class="val" id="disp-eps">2.0 px</span></div>
             <input type="range" id="param-eps" min="0.5" max="15" step="0.5" value="2.0">
@@ -61,32 +179,84 @@
         <div class="control-group">
             <div class="label-row"><label>Adaptive CPs (Auto)</label><span class="val" id="disp-cp">-</span></div>
         </div>
-        <div class="checkbox-row" style="margin-top: 0;">
-            <label><input type="checkbox" id="chk-path-points" checked> Path points</label>
-            <label><input type="checkbox" id="chk-skinning" checked> Skinning</label>
-            <label><input type="checkbox" id="chk-color" checked> Color stroke</label>
+
+        <h2 class="sub">DBSC tunables</h2>
+        <div class="checkbox-row" style="margin-bottom:6px">
+            <span style="color:#888">Degree</span>
+            <label><input type="radio" name="degree" value="2"> 2</label>
+            <label><input type="radio" name="degree" value="3" checked> 3</label>
+            <label><input type="radio" name="degree" value="4"> 4</label>
         </div>
-        <button id="btn-clear">Clear Canvas</button>
+        <div class="control-group">
+            <div class="label-row"><label>Render Tolerance</label><span class="val" id="disp-tol">0.5 px</span></div>
+            <input type="range" id="param-tol" min="0.1" max="5" step="0.1" value="0.5">
+        </div>
+
+        <h2 class="sub">Pressure sim</h2>
         <div class="checkbox-row">
-            <label><input type="checkbox" id="chk-debug"> Debug Data</label>
-            <label><input type="checkbox" id="chk-export"> Export Data</label>
+            <label><input type="radio" name="psim" value="input" checked> Input</label>
+            <label><input type="radio" name="psim" value="uniform"> Uniform</label>
+            <label><input type="radio" name="psim" value="ease"> Ease</label>
+            <label><input type="radio" name="psim" value="speed"> Speed</label>
+        </div>
+
+        <h2 class="sub">Debug panes</h2>
+        <div class="checkbox-row">
+            <label><input type="checkbox" id="chk-debug"> Coord</label>
+            <label><input type="checkbox" id="chk-export"> Export</label>
+            <label><input type="checkbox" id="chk-log"> DBSC log</label>
+            <label><input type="checkbox" id="chk-svg"> SVG preview</label>
+        </div>
+        <div class="checkbox-row" style="margin-top:4px">
+            <label><input type="checkbox" id="chk-verbose"> Verbose DBSC log</label>
+        </div>
+        <div class="hint">
+            Draw with mouse/stylus (or pick a preset). Drag <b>red dots</b> to move disks,
+            <b>blue dots</b> to resize. Click a red dot to set its color.
         </div>
     </div>
     <div id="data-log-area">
         <div class="log-pane" id="pane-debug">
-            <h3>Coordinate Debug</h3>
+            <div class="log-pane-header"><h3>Coordinate Debug</h3>
+                <button class="copy-btn" data-copy-target="log-debug">Copy</button></div>
             <textarea id="log-debug" readonly></textarea>
         </div>
         <div class="log-pane" id="pane-export">
-            <h3>SVG & DBSC Export</h3>
-            <textarea id="log-export" readonly></textarea>
+            <div class="log-pane-header"><h3>SVG &amp; DBSC export (editable → Load from export)</h3>
+                <button class="copy-btn" data-copy-target="log-export">Copy</button></div>
+            <textarea id="log-export"></textarea>
+        </div>
+        <div class="log-pane" id="pane-log">
+            <div class="log-pane-header"><h3>DBSC log</h3>
+                <button class="copy-btn" data-copy-target="log">Copy</button></div>
+            <textarea id="log" readonly></textarea>
+        </div>
+        <div class="log-pane" id="pane-svg">
+            <div class="log-pane-header"><h3>Live SVG preview</h3></div>
+            <div class="svg-preview" id="svg-preview"></div>
         </div>
     </div>
 </div>
 
+<div id="color-picker-popover">
+    <div class="cp-row">
+        <span id="cp-title">Disk color</span>
+    </div>
+    <div class="cp-row">
+        <input type="color" id="cp-input" value="#000000">
+        <label><input type="checkbox" id="cp-all"> All disks</label>
+    </div>
+    <div class="cp-row">
+        <button id="cp-apply" class="primary">Apply</button>
+        <button id="cp-reset">Reset</button>
+        <button id="cp-close">Close</button>
+    </div>
+</div>
+
+<div id="toast"></div>
+
 <canvas id="canvas"></canvas>
 
-<!-- Import the DiskBSpline library (for skinning + colored mesh rendering) -->
 <script src="../index.js"></script>
 <script src="./pen-input-utils.js"></script>
 <script src="./pen-input-ui.js"></script>
