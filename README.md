@@ -9,6 +9,7 @@ This open-source JavaScript library enables developers and designers to create s
 
 - [Interactive Disk B-Spline Curves Demo](https://bobpritchett.github.io/dbsc-svg/demo) - Try creating variable-width SVG strokes in real-time
 - [Variable width splines from stylus input](https://bobpritchett.github.io/dbsc-svg/demo/pen-input.html) - Draw with your mouse/stylus, auto-fit a spline, then edit disk centers + radii
+- [Ink editor (multi-stroke test harness)](https://bobpritchett.github.io/dbsc-svg/demo/ink-editor.html) - Draw multiple pressure-sensitive strokes, see them as solid tinted shapes with draggable disk handles, analyze pressure→width fitting, and round-trip strokes through JSON and SVG via the `DBSCInk` API (`demo/dbsc-ink.js`)
 
 ## Overview
 

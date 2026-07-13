@@ -70,6 +70,11 @@ class DiskBSpline {
   }
 
   addDisk(disk) {
+    if (this.closed) {
+      // The wrapped duplicate disks are built at construction; appending after
+      // them would corrupt the periodic wrap. Rebuild the instance instead.
+      throw new Error("addDisk is not supported on closed DiskBSpline instances");
+    }
     const newDisk = {
       ...disk,
       color: disk.color || { r: 0, g: 0, b: 0, a: 1 }
@@ -113,41 +118,77 @@ class DiskBSpline {
     }
   }
 
-  basisFunction(i, k, u) {
-    if (k === 0) {
-      if (!this.closed && u === this.knots[this.knots.length - 1] && i === this.knots.length - k - 2) {
-        return 1;
-      }
-      return u >= this.knots[i] && u < this.knots[i + 1] ? 1 : 0;
-    }
+  // ==========================================
+  // B-spline evaluation (span-based, iterative)
+  //
+  // B-splines have local support: at any parameter u only degree+1 basis
+  // functions are non-zero. We locate the knot span with a binary search and
+  // evaluate just those functions with the iterative Cox–de Boor triangle
+  // (Piegl & Tiller A2.1/A2.2) — O(degree²) per evaluation instead of the
+  // previous O(n · 2^degree) recursive sweep over every control disk.
+  // ==========================================
 
-    let coeff1 = 0;
-    if (this.knots[i + k] - this.knots[i] !== 0) {
-      coeff1 = (u - this.knots[i]) / (this.knots[i + k] - this.knots[i]);
+  /** Knot span index s with knots[s] <= u < knots[s+1], clamped to the curve domain. */
+  findSpan(u) {
+    const n = this.controlDisks.length - 1;
+    const k = this.degree;
+    if (u >= this.knots[n + 1]) return n;
+    if (u <= this.knots[k]) return k;
+    let low = k, high = n + 1;
+    let mid = (low + high) >> 1;
+    while (u < this.knots[mid] || u >= this.knots[mid + 1]) {
+      if (u < this.knots[mid]) high = mid;
+      else low = mid;
+      mid = (low + high) >> 1;
     }
-
-    let coeff2 = 0;
-    if (this.knots[i + k + 1] - this.knots[i + 1] !== 0) {
-      coeff2 = (this.knots[i + k + 1] - u) / (this.knots[i + k + 1] - this.knots[i + 1]);
-    }
-
-    return coeff1 * this.basisFunction(i, k - 1, u) + coeff2 * this.basisFunction(i + 1, k - 1, u);
+    return mid;
   }
 
-  basisFunctionDerivative(i, k, u) {
-    if (k === 0) return 0;
-
-    let coeff1 = 0;
-    if (this.knots[i + k] - this.knots[i] !== 0) {
-      coeff1 = k / (this.knots[i + k] - this.knots[i]);
+  /**
+   * The p+1 non-vanishing basis functions of degree p at u.
+   * Returns N where N[j] = N_{span-p+j, p}(u).
+   */
+  basisFunctionsAt(span, u, p = this.degree) {
+    const N = new Array(p + 1).fill(0);
+    const left = new Array(p + 1).fill(0);
+    const right = new Array(p + 1).fill(0);
+    N[0] = 1;
+    for (let j = 1; j <= p; j++) {
+      left[j] = u - this.knots[span + 1 - j];
+      right[j] = this.knots[span + j] - u;
+      let saved = 0;
+      for (let r = 0; r < j; r++) {
+        const denom = right[r + 1] + left[j - r];
+        const temp = denom !== 0 ? N[r] / denom : 0;
+        N[r] = saved + right[r + 1] * temp;
+        saved = left[j - r] * temp;
+      }
+      N[j] = saved;
     }
+    return N;
+  }
 
-    let coeff2 = 0;
-    if (this.knots[i + k + 1] - this.knots[i + 1] !== 0) {
-      coeff2 = k / (this.knots[i + k + 1] - this.knots[i + 1]);
+  /**
+   * First derivatives of the k+1 non-vanishing degree-k basis functions at u,
+   * from the degree-(k-1) basis: N'_{i,k} = k/(t_{i+k}-t_i)·N_{i,k-1}
+   *                                       - k/(t_{i+k+1}-t_{i+1})·N_{i+1,k-1}.
+   * Returns dN where dN[j] = N'_{span-k+j, k}(u).
+   */
+  basisDerivativesAt(span, u) {
+    const k = this.degree;
+    const dN = new Array(k + 1).fill(0);
+    if (k === 0) return dN;
+    const Nlow = this.basisFunctionsAt(span, u, k - 1); // Nlow[j] = N_{span-k+1+j, k-1}
+    for (let j = 0; j <= k; j++) {
+      const i = span - k + j;
+      let v = 0;
+      const d1 = this.knots[i + k] - this.knots[i];
+      if (d1 !== 0 && j >= 1) v += (k / d1) * Nlow[j - 1];
+      const d2 = this.knots[i + k + 1] - this.knots[i + 1];
+      if (d2 !== 0 && j <= k - 1) v -= (k / d2) * Nlow[j];
+      dN[j] = v;
     }
-
-    return coeff1 * this.basisFunction(i, k - 1, u) - coeff2 * this.basisFunction(i + 1, k - 1, u);
+    return dN;
   }
 
   // Returns { center: {x,y}, radius, color: {r,g,b,a} }
@@ -157,40 +198,31 @@ class DiskBSpline {
     }
 
     const n = this.controlDisks.length - 1;
-    
-    // For open shapes, handle endpoint exactly to avoid basis function drop-off
+
+    // For open shapes, the clamped endpoint is exactly the last control disk
     if (!this.closed && u >= this.knots[n + 1] - 1e-9) {
-       return this.controlDisks[n];
+      return this.controlDisks[n];
     }
-    
+
     u = this.clampParameter(u);
+    const span = this.findSpan(u);
+    const N = this.basisFunctionsAt(span, u);
 
     let centerX = 0, centerY = 0, radius = 0;
     let r = 0, g = 0, b = 0, a = 0;
-    let totalBasis = 0;
 
-    for (let i = 0; i <= n; i++) {
-      const basis = this.basisFunction(i, this.degree, u);
-      totalBasis += basis;
-      // Optimization: skip if basis is 0 (mostly will be 0)
-      if (Math.abs(basis) < 1e-6) continue;
-
-      centerX += basis * this.controlDisks[i].center.x;
-      centerY += basis * this.controlDisks[i].center.y;
-      radius += basis * this.controlDisks[i].radius;
-      
-      const col = this.controlDisks[i].color;
+    for (let j = 0; j <= this.degree; j++) {
+      const basis = N[j];
+      if (basis === 0) continue;
+      const disk = this.controlDisks[span - this.degree + j];
+      centerX += basis * disk.center.x;
+      centerY += basis * disk.center.y;
+      radius += basis * disk.radius;
+      const col = disk.color;
       r += basis * col.r;
       g += basis * col.g;
       b += basis * col.b;
       a += basis * col.a;
-    }
-
-    // Log if basis functions don't sum to 1 (within floating point error)
-    if (Math.abs(totalBasis - 1) > 0.0001) {
-      this.logMessage(
-        `WARNING: Basis functions sum to ${totalBasis} at u=${u}, should be 1`
-      );
     }
 
     return {
@@ -205,37 +237,18 @@ class DiskBSpline {
       return { x: 0, y: 0, radiusRate: 0 };
     }
 
-    const n = this.controlDisks.length - 1;
-    // Boundary checks for exact derivatives at endpoints
-    if (!this.closed) {
-      if (u >= this.knots[n + 1] - 1e-6) {
-         // Use finite difference or just fallback to previous small epsilon
-         u = this.knots[n + 1] - 1e-4;
-      } else if (u <= this.knots[this.degree] + 1e-6) {
-         u = this.knots[this.degree] + 1e-4;
-      }
-    }
-    
     u = this.clampParameter(u);
+    const span = this.findSpan(u);
+    const dN = this.basisDerivativesAt(span, u);
 
     let dx = 0, dy = 0, dr = 0;
-    let totalDerivative = 0;
-
-    for (let i = 0; i <= n; i++) {
-      const derivative = this.basisFunctionDerivative(i, this.degree, u);
-      totalDerivative += derivative;
-      if (Math.abs(derivative) < 1e-6) continue;
-      
-      dx += derivative * this.controlDisks[i].center.x;
-      dy += derivative * this.controlDisks[i].center.y;
-      dr += derivative * this.controlDisks[i].radius;
-    }
-
-    // Log if derivatives don't sum to 0 (within floating point error)
-    if (Math.abs(totalDerivative) > 0.0001) {
-      this.logMessage(
-        `WARNING: Basis function derivatives sum to ${totalDerivative} at u=${u}, should be 0`
-      );
+    for (let j = 0; j <= this.degree; j++) {
+      const derivative = dN[j];
+      if (derivative === 0) continue;
+      const disk = this.controlDisks[span - this.degree + j];
+      dx += derivative * disk.center.x;
+      dy += derivative * disk.center.y;
+      dr += derivative * disk.radius;
     }
 
     return { x: dx, y: dy, radiusRate: dr };
@@ -254,11 +267,17 @@ class DiskBSpline {
     }
   }
 
-  // Calculate the correct analytic envelope points
-  evaluateEnvelopeAt(u) {
-    const disk = this.evaluateAt(u);
-    const deriv = this.evaluateDerivativeAt(u);
-
+  /**
+   * Envelope contact points for a disk + derivative pair.
+   * Pure math shared by evaluateEnvelopeAt and the render pipeline (which
+   * caches disk/derivative per sample so the spline is evaluated only once).
+   *
+   * Contact-point condition for the envelope of moving circles:
+   *   (P - C) · C' = -r·r'  →  tangential offset r·sinα with sinα = -r'/|C'|.
+   * |sinα| is clamped to 1; beyond that the circle family has no real
+   * envelope (nested circles / cusp).
+   */
+  envelopeFromDiskAndDerivative(disk, deriv) {
     const cx = disk.center.x;
     const cy = disk.center.y;
     const r = disk.radius;
@@ -266,73 +285,47 @@ class DiskBSpline {
     const dy = deriv.y;
     const dr = deriv.radiusRate;
 
-    const lenSq = dx * dx + dy * dy;
-    const len = Math.sqrt(lenSq);
-
-    // Singularity check: if velocity is 0 or r' > velocity (swallowed)
-    // For now we just guard against div by zero
+    const len = Math.sqrt(dx * dx + dy * dy);
     if (len < 1e-6) {
-      // Fallback to normal perpendicular to previous motion or default
-      return { 
-        left: { x: cx, y: cy }, 
-        right: { x: cx, y: cy },
-        disk 
-      };
+      // Degenerate tangent: collapse to the center
+      return { left: { x: cx, y: cy }, right: { x: cx, y: cy } };
     }
 
-    // Exact DBSC envelope formula
-    // The offset vector has two components: one along tangent, one perpendicular
-    // sin(alpha) = -dr / len  (Note: sign depends on definition of r growth)
-    // Actually, let's use the property that (P-C).C' = -r*dr
-    
-    // Check if |dr| > |C'|, which means no real envelope (nested circles)
-    // We clamp the ratio to [-1, 1] to avoid NaNs, though technically it means "no envelope"
     let sinAlpha = -dr / len;
     if (sinAlpha > 1) sinAlpha = 1;
     if (sinAlpha < -1) sinAlpha = -1;
-    
     const cosAlpha = Math.sqrt(1 - sinAlpha * sinAlpha);
 
-    // Normal vector (perpendicular to C')
-    const nx = -dy / len;
-    const ny = dx / len;
+    const tx = dx / len, ty = dy / len; // unit tangent
+    const nx = -ty, ny = tx;            // unit normal (left side)
 
-    // Tangent vector normalized
-    const tx = dx / len;
-    const ty = dy / len;
-
-    // Envelope points
-    // P = C + r * (sinAlpha * T + cosAlpha * N) (Check signs)
-    // We want the two sides.
-    // Side 1: Angle + alpha_offset
-    // Side 2: Angle - alpha_offset
-    
-    // Correct derivation:
-    // The vector from center to contact point is V.
-    // V has length r.
-    // V . T = -r * dr/|C'|  (Projected on tangent)
-    // V . N = +/- r * sqrt(1 - (dr/|C'|)^2) (Projected on normal)
-    
-    const v_tangent_scale = -dr / len; // This is sinAlpha * r? No, just -dr/len is sinAlpha
-    // So component along T is r * (-dr/len)
-    
-    const compTx = tx * (r * v_tangent_scale);
-    const compTy = ty * (r * v_tangent_scale);
-    
-    const compNx = nx * (r * cosAlpha);
-    const compNy = ny * (r * cosAlpha);
+    const ox = tx * r * sinAlpha, oy = ty * r * sinAlpha; // along tangent
+    const ex = nx * r * cosAlpha, ey = ny * r * cosAlpha; // along normal
 
     return {
-      left: { 
-        x: cx + compTx + compNx, 
-        y: cy + compTy + compNy 
-      },
-      right: { 
-        x: cx + compTx - compNx, 
-        y: cy + compTy - compNy 
-      },
-      disk
+      left: { x: cx + ox + ex, y: cy + oy + ey },
+      right: { x: cx + ox - ex, y: cy + oy - ey },
     };
+  }
+
+  // Calculate the correct analytic envelope points
+  evaluateEnvelopeAt(u) {
+    const disk = this.evaluateAt(u);
+    const deriv = this.evaluateDerivativeAt(u);
+    return { ...this.envelopeFromDiskAndDerivative(disk, deriv), disk };
+  }
+
+  /**
+   * Attach derivative + envelope data to sampled circles (once per sample).
+   * The outline, mesh, caps, and normals all reuse these instead of
+   * re-evaluating the spline per consumer.
+   */
+  annotateSamples(circles) {
+    for (const c of circles) {
+      if (!c.deriv) c.deriv = this.evaluateDerivativeAt(c.t ?? 0);
+      if (!c.env) c.env = this.envelopeFromDiskAndDerivative(c, c.deriv);
+    }
+    return circles;
   }
 
   // ==========================================
@@ -359,6 +352,10 @@ class DiskBSpline {
       circles = this.sampleCurveAdaptive();
       this.logMessage(`Adaptive sampling generated ${circles.length} points`);
     }
+
+    // Evaluate derivative + envelope once per sample; every consumer below
+    // (outline, mesh, caps, normals) reuses the cached values.
+    this.annotateSamples(circles);
 
     const meshStartTime = performance.now();
     const mesh = tessellate ? this.generateMesh(circles) : [];
@@ -448,27 +445,27 @@ class DiskBSpline {
     let cuspCount = 0;
     let cuspRanges = []; // Track ranges where cusps were detected
     let currentCuspStart = null;
+    let currentRangeSkipped = 0;
     let loggedCusps = 0;
     const maxLoggedCusps = 5; // Only log first few cusp detections in detail
-    
+
     for (let i = 0; i < allCircles.length; i++) {
       const curr = allCircles[i];
-      
+
       // Check admissibility using the paper's derivative condition
-      const shouldLogDetails = (currentCuspStart === null && loggedCusps < maxLoggedCusps);
       const admissible = this.isAdmissibleAt(curr.t, false);
-      
+
       if (admissible) {
         circles.push(curr);
         if (currentCuspStart !== null) {
           // End of cusp range
-          const rangeCircleCount = cuspCount - (cuspRanges.length > 0 ? cuspRanges.reduce((a, r) => a + r.skipped, 0) : 0);
-          cuspRanges.push({ 
-            start: currentCuspStart, 
-            end: allCircles[i - 1].t, 
-            skipped: rangeCircleCount
+          cuspRanges.push({
+            start: currentCuspStart,
+            end: allCircles[i - 1].t,
+            skipped: currentRangeSkipped,
           });
           currentCuspStart = null;
+          currentRangeSkipped = 0;
         }
       } else {
         if (currentCuspStart === null) {
@@ -483,16 +480,16 @@ class DiskBSpline {
           }
         }
         cuspCount++;
+        currentRangeSkipped++;
       }
     }
-    
+
     // Close any open cusp range
     if (currentCuspStart !== null) {
-      const rangeCircleCount = cuspCount - (cuspRanges.length > 0 ? cuspRanges.reduce((a, r) => a + r.skipped, 0) : 0);
-      cuspRanges.push({ 
-        start: currentCuspStart, 
-        end: allCircles[allCircles.length - 1].t, 
-        skipped: rangeCircleCount
+      cuspRanges.push({
+        start: currentCuspStart,
+        end: allCircles[allCircles.length - 1].t,
+        skipped: currentRangeSkipped,
       });
     }
     
@@ -548,35 +545,6 @@ class DiskBSpline {
     return circles;
   }
 
-  refineSegment(c1, c2, tolerance, depth) {
-    const maxDepth = 8;
-    if (depth > maxDepth) return [];
-
-    const midT = (c1.t + c2.t) / 2;
-    const midCircle = { t: midT, ...this.evaluateAt(midT) };
-
-    // 1. Admissibility Check (Cusp Detection)
-    // Using the paper's condition: cusp when |r'(t)| >= |C'(t)|
-    if (!this.isAdmissibleAt(midT)) {
-      // If not admissible (cusp), we DO NOT insert it. 
-      // This effectively bridges the cusp.
-      return [];
-    }
-
-    // 2. Error Check
-    // Measure distance from Analytic Envelope at midT to the Skin Segment (tangent line)
-    const error = this.measureSkinError(c1, c2, midT);
-
-    if (error > tolerance) {
-      // Recurse
-      const left = this.refineSegment(c1, midCircle, tolerance, depth + 1);
-      const right = this.refineSegment(midCircle, c2, tolerance, depth + 1);
-      return [...left, midCircle, ...right];
-    }
-
-    return [];
-  }
-
   /**
    * Check if a circle at parameter t is admissible (no cusp).
    * From Kruppa et al.: A cusp occurs when |r'(t)| >= |C'(t)|
@@ -598,46 +566,6 @@ class DiskBSpline {
     }
     
     return admissible;
-  }
-
-  measureSkinError(c1, c2, midT) {
-    // 1. Get true envelope point at midT
-    const env = this.evaluateEnvelopeAt(midT);
-    
-    // 2. Get skin line segment at approx location
-    // We approximate the skin as the external tangents between c1 and c2.
-    // There are two tangents: left and right.
-    const tangents = this.getCircleTangents(c1, c2);
-    if (!tangents) return 0; // One circle inside another
-    
-    // Check distances to both left and right tangents
-    // Distance from Point P to Line defined by A, B: |(By-Ay)(Ax-Px) - (Bx-Ax)(Ay-Py)| / Length
-    
-    function distToLine(px, py, x1, y1, x2, y2) {
-       const A = px - x1;
-       const B = py - y1;
-       const C = x2 - x1;
-       const D = y2 - y1;
-       const dot = A * C + B * D;
-       const lenSq = C * C + D * D;
-       if (lenSq === 0) return Math.sqrt(A*A + B*B);
-       const param = Math.max(0, Math.min(1, dot / lenSq));
-       const xx = x1 + param * C;
-       const yy = y1 + param * D;
-       const dx = px - xx;
-       const dy = py - yy;
-       return Math.sqrt(dx * dx + dy * dy);
-    }
-    
-    const dLeft = distToLine(env.left.x, env.left.y, 
-                             tangents.left1.x, tangents.left1.y, 
-                             tangents.left2.x, tangents.left2.y);
-                             
-    const dRight = distToLine(env.right.x, env.right.y, 
-                              tangents.right1.x, tangents.right1.y, 
-                              tangents.right2.x, tangents.right2.y);
-                              
-    return Math.max(dLeft, dRight);
   }
 
   getCircleTangents(c1, c2) {
@@ -695,7 +623,7 @@ class DiskBSpline {
     const normals = [];
     for (let i = 0; i < disks.length; i++) {
       const u = disks[i].t !== undefined ? disks[i].t : (startU + i * parameterStep);
-      const derivative = this.evaluateDerivativeAt(u);
+      const derivative = disks[i].deriv || this.evaluateDerivativeAt(u);
       const length = Math.sqrt(derivative.x * derivative.x + derivative.y * derivative.y);
 
       if (length > 0.0001) {
@@ -804,25 +732,20 @@ class DiskBSpline {
 
   generateOutlinePath(circles, useTangents = false) {
     if (circles.length < 2) return "";
-    
+
     if (useTangents) {
       // Skinning path: tangent lines + circular arcs (Kruppa et al.)
       return this.generateSkinningPath(circles);
     }
-    
-    // Analytical envelope sampling points
-    let leftPoints = [];
-    let rightPoints = [];
-    
-    for (const c of circles) {
-      const env = this.evaluateEnvelopeAt(c.t || 0);
-      leftPoints.push(env.left);
-      rightPoints.push(env.right);
-    }
-    
+
+    // Analytical envelope sampling points (cached by annotateSamples)
+    this.annotateSamples(circles);
+    const leftPoints = circles.map((c) => c.env.left);
+    const rightPoints = circles.map((c) => c.env.right);
+
     // Construct Path
     let d = "";
-    
+
     // Start Cap
     d += `M ${leftPoints[0].x} ${leftPoints[0].y}`;
 
@@ -832,13 +755,12 @@ class DiskBSpline {
     }
 
     // End Cap
-    if (!this.closed && circles[circles.length-1].radius > 0) {
-        const last = circles[circles.length-1];
-        const endR = rightPoints[rightPoints.length-1];
-        d += ` A ${last.radius} ${last.radius} 0 1 0 ${endR.x} ${endR.y}`; 
+    const last = circles[circles.length - 1];
+    if (!this.closed && last.radius > 0) {
+      d += this.capArcs(last, leftPoints[leftPoints.length - 1], rightPoints[rightPoints.length - 1], +1);
     } else {
-        const endR = rightPoints[rightPoints.length-1];
-        d += ` L ${endR.x} ${endR.y}`;
+      const endR = rightPoints[rightPoints.length - 1];
+      d += ` L ${endR.x} ${endR.y}`;
     }
 
     // Trace Right Backward
@@ -848,11 +770,47 @@ class DiskBSpline {
 
     // Start Cap
     if (!this.closed && circles[0].radius > 0) {
-       d += ` A ${circles[0].radius} ${circles[0].radius} 0 1 0 ${leftPoints[0].x} ${leftPoints[0].y}`;
+      d += this.capArcs(circles[0], rightPoints[0], leftPoints[0], -1);
     }
-    
+
     d += " Z";
     return d;
+  }
+
+  /**
+   * End-cap path data from `from` to `to` around the cap tip of `circle`.
+   * dir=+1 routes through the forward tip (end cap), dir=-1 through the
+   * backward tip (start cap).
+   *
+   * When r' ≠ 0 at an endpoint the two envelope contact points are NOT
+   * diametrically opposite, so a single arc with fixed flags picks the wrong
+   * side whenever the stroke is tapering (r' < 0). Splitting the cap into two
+   * arcs through the tip, with sweep chosen per-arc from the cross product,
+   * is correct for any radius rate.
+   */
+  capArcs(circle, from, to, dir) {
+    const cx = circle.center.x;
+    const cy = circle.center.y;
+    const r = circle.radius;
+    if (!(r > 0)) return ` L ${to.x} ${to.y}`;
+
+    const deriv = circle.deriv || this.evaluateDerivativeAt(circle.t ?? 0);
+    const len = Math.hypot(deriv.x, deriv.y);
+    if (len < 1e-6) {
+      // Degenerate tangent: a plain semicircle is the best we can do
+      return ` A ${r} ${r} 0 0 1 ${to.x} ${to.y}`;
+    }
+
+    const tip = {
+      x: cx + dir * (deriv.x / len) * r,
+      y: cy + dir * (deriv.y / len) * r,
+    };
+    const seg = (p1, p2) => {
+      // sweep=1 = positive-angle direction in SVG's y-down coordinates
+      const cross = (p1.x - cx) * (p2.y - cy) - (p1.y - cy) * (p2.x - cx);
+      return ` A ${r} ${r} 0 0 ${cross > 0 ? 1 : 0} ${p2.x} ${p2.y}`;
+    };
+    return seg(from, tip) + seg(tip, to);
   }
 
   /**
@@ -931,7 +889,7 @@ class DiskBSpline {
       
       // Determine sweep direction based on the curve direction at the end
       // We want to go around the "outside" of the endpoint
-      const lastDeriv = this.evaluateDerivativeAt(lastCircle.t || 0);
+      const lastDeriv = lastCircle.deriv || this.evaluateDerivativeAt(lastCircle.t || 0);
       const endSweep = (lastDeriv.x * (lastRight.y - lastLeft.y) - lastDeriv.y * (lastRight.x - lastLeft.x)) > 0 ? 1 : 0;
       
       d += ` A ${lastCircle.radius} ${lastCircle.radius} 0 0 ${endSweep} ${lastRight.x} ${lastRight.y}`;
@@ -960,7 +918,7 @@ class DiskBSpline {
       // End cap: lastDeriv.x * (lastRight.y - lastLeft.y) - lastDeriv.y * (lastRight.x - lastLeft.x)
       // Start cap: firstDeriv.x * (firstLeft.y - firstRight.y) - firstDeriv.y * (firstLeft.x - firstRight.x)
       // But we need to flip the sign since we're going the opposite direction
-      const firstDeriv = this.evaluateDerivativeAt(firstCircle.t || 0);
+      const firstDeriv = firstCircle.deriv || this.evaluateDerivativeAt(firstCircle.t || 0);
       const startSweep = (firstDeriv.x * (firstLeft.y - firstRight.y) - firstDeriv.y * (firstLeft.x - firstRight.x)) < 0 ? 1 : 0;
       
       d += ` A ${firstCircle.radius} ${firstCircle.radius} 0 0 ${startSweep} ${firstLeft.x} ${firstLeft.y}`;
@@ -976,22 +934,6 @@ class DiskBSpline {
     return d;
   }
 
-  /**
-   * Calculate the sweep angle for an arc, ensuring we go the shorter way
-   * for the left side (CCW generally) and right side (CW generally).
-   */
-  calculateArcSweep(fromAngle, toAngle, preferCCW) {
-    let diff = toAngle - fromAngle;
-    
-    // Normalize to [-PI, PI]
-    while (diff > Math.PI) diff -= 2 * Math.PI;
-    while (diff < -Math.PI) diff += 2 * Math.PI;
-    
-    // For skinning, we usually want the smaller arc on the outside of the curve
-    // The sign indicates direction: positive = CCW, negative = CW
-    return diff;
-  }
-
   generateMesh(circles) {
     const mesh = [];
     
@@ -999,19 +941,21 @@ class DiskBSpline {
     // For skinning, we should ideally use the tangent points evaluated during the process
     // But evaluating envelope at the circle's 't' is a good approximation if dense.
 
+    this.annotateSamples(circles);
+
     for (let i = 0; i < circles.length - 1; i++) {
        const c1 = circles[i];
        const c2 = circles[i+1];
-       
+
        // Calculate interpolated color
        const r = Math.floor((c1.color.r + c2.color.r) / 2 * 255);
        const g = Math.floor((c1.color.g + c2.color.g) / 2 * 255);
        const b = Math.floor((c1.color.b + c2.color.b) / 2 * 255);
        const a = (c1.color.a + c2.color.a) / 2;
-       
-       // Get boundary points using envelope evaluation
-       const e1 = this.evaluateEnvelopeAt(c1.t || 0);
-       const e2 = this.evaluateEnvelopeAt(c2.t || 0);
+
+       // Boundary points from the cached envelope evaluation
+       const e1 = c1.env;
+       const e2 = c2.env;
        
        // Create points string with toFixed(2) to keep the SVG string size manageable
        const points = [
@@ -1058,13 +1002,8 @@ class DiskBSpline {
     return meshGroup + outlinePath;
   }
 
-  // Legacy support for sampleCurveAdaptive
-  sampleCurveAdaptive(baseNumSamples = 50, maxNumSamples = 200) {
-     // Re-implement or reuse logic but ensure we return objects with 't'
-     // The original implementation returned just 'disk' (center, radius).
-     // We need 't' for consistency.
-     
-     // Reuse the logic from original code but add 't'
+  // Adaptive curvature-based sampling; returns circles tagged with their parameter 't'
+  sampleCurveAdaptive(baseNumSamples = 50) {
     const result = [];
     const n = this.controlDisks.length - 1;
     const startU = this.knots[this.degree];
@@ -1149,10 +1088,10 @@ class DiskBSpline {
       // The demo expects { fillPath, skeletonPath, disks, normals }
       // We need to regenerate normals for the demo viz
       
-      // Re-calculate normals for visualization
+      // Re-calculate normals for visualization (derivatives cached by render)
       const disks = res.circles;
       const normals = disks.map(d => {
-          const deriv = this.evaluateDerivativeAt(d.t);
+          const deriv = d.deriv || this.evaluateDerivativeAt(d.t);
           const len = Math.sqrt(deriv.x*deriv.x + deriv.y*deriv.y);
           return len > 0 ? { x: -deriv.y/len, y: deriv.x/len } : {x:0, y:0};
       });
